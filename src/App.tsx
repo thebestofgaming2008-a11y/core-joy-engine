@@ -5,7 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShopProvider } from "@/store/shop";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
-import { useCurrency } from "@/contexts/CurrencyContext";
+import { CurrencyProvider, useCurrency } from "@/contexts/CurrencyContext";
 import { upsertProfile } from "@/services/accountService";
 import { lazy, Suspense, useEffect, useRef } from "react";
 
@@ -106,6 +106,7 @@ const App = () => (
         <BasicAnalytics />
         <ScrollManager />
                   <AuthProvider>
+          <CurrencyProvider>
             <CurrencyProfileSync />
             <ShopProvider>
               <Suspense fallback={<LoadingScreen />}>
@@ -129,6 +130,7 @@ const App = () => (
                 </Routes>
               </Suspense>
             </ShopProvider>
+          </CurrencyProvider>
           </AuthProvider>
               </BrowserRouter>
     </TooltipProvider>
