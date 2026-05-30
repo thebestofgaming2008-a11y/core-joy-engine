@@ -1,5 +1,4 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -7,7 +6,6 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShopProvider } from "@/store/shop";
 import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { useCurrency } from "@/contexts/CurrencyContext";
-import { convex } from "@/integrations/convex/client";
 import { upsertProfile } from "@/services/accountService";
 import { lazy, Suspense, useEffect, useRef } from "react";
 
@@ -107,8 +105,7 @@ const App = () => (
       <BrowserRouter>
         <BasicAnalytics />
         <ScrollManager />
-        <ConvexAuthProvider client={convex}>
-          <AuthProvider>
+                  <AuthProvider>
             <CurrencyProfileSync />
             <ShopProvider>
               <Suspense fallback={<LoadingScreen />}>
@@ -133,8 +130,7 @@ const App = () => (
               </Suspense>
             </ShopProvider>
           </AuthProvider>
-        </ConvexAuthProvider>
-      </BrowserRouter>
+              </BrowserRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
