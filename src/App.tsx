@@ -39,11 +39,8 @@ function LoadingScreen() {
   );
 }
 
+// Admin is intentionally accessible without login for now (preview/demo).
 function RequireAdmin({ children }: { children: React.ReactNode }) {
-  const { user, isAdmin, loading } = useAuth();
-  if (loading) return <LoadingScreen />;
-  if (!user) return <Navigate to="/login?redirect=/admin" replace />;
-  if (!isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
