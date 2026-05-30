@@ -1,7 +1,7 @@
 import { api } from "../../convex/_generated/api";
 import { convex } from "@/integrations/convex/client";
 
-const sampleProducts = [
+const sampleProducts: Product[] = [
   {
     id: "1",
     name: "Fortress of the Muslim",
