@@ -1,7 +1,7 @@
 import { api } from "../../convex/_generated/api";
 import { convex } from "@/integrations/convex/client";
 
-const sampleProducts: Product[] = [
+const sampleProducts = [
   {
     id: "1",
     name: "Fortress of the Muslim",
@@ -188,7 +188,7 @@ function normalize(p: unknown): Product {
 export async function listActiveProducts(): Promise<Product[]> {
   try {
     const products = ((await convex.query(api.products.listActiveProducts, {})) as Product[]).map(normalize);
-    return products.length ? products : sampleProducts;
+    return products.length ? products : (sampleProducts as unknown as Product[]);
   } catch {
     return sampleProducts;
   }
@@ -197,18 +197,18 @@ export async function listActiveProducts(): Promise<Product[]> {
 export async function getProductById(id: string): Promise<Product | null> {
   try {
     const product = (await convex.query(api.products.getProductById, { id })) as Product | null;
-    return product ? normalize(product) : sampleProducts.find(p => p.id === id) || null;
+    return product ? normalize(product) : (sampleProducts as unknown as Product[]).find(p => p.id === id) || null;
   } catch {
-    return sampleProducts.find(p => p.id === id) || null;
+    return (sampleProducts as unknown as Product[]).find(p => p.id === id) || null;
   }
 }
 
 export async function getProductBySlug(slug: string): Promise<Product | null> {
   try {
     const product = (await convex.query(api.products.getProductBySlug, { slug })) as Product | null;
-    return product ? normalize(product) : sampleProducts.find(p => p.slug === slug) || null;
+    return product ? normalize(product) : (sampleProducts as unknown as Product[]).find(p => p.slug === slug) || null;
   } catch {
-    return sampleProducts.find(p => p.slug === slug) || null;
+    return (sampleProducts as unknown as Product[]).find(p => p.slug === slug) || null;
   }
 }
 
@@ -220,9 +220,9 @@ export async function listFeatured(limit = 8): Promise<Product[]> {
 export async function listByCategory(categorySlug: string): Promise<Product[]> {
   try {
     const products = ((await convex.query(api.products.listByCategory, { category: categorySlug })) as Product[]).map(normalize);
-    return products.length ? products : sampleProducts.filter(p => p.category === categorySlug);
+    return products.length ? products : (sampleProducts as unknown as Product[]).filter(p => p.category === categorySlug);
   } catch {
-    return sampleProducts.filter(p => p.category === categorySlug);
+    return (sampleProducts as unknown as Product[]).filter(p => p.category === categorySlug);
   }
 }
 
@@ -231,6 +231,6 @@ export async function listByIds(ids: string[]): Promise<Product[]> {
   try {
     return ((await convex.query(api.products.listByIds, { ids })) as Product[]).map(normalize);
   } catch {
-    return sampleProducts.filter(p => ids.includes(p.id));
+    return (sampleProducts as unknown as Product[]).filter(p => ids.includes(p.id));
   }
 }
