@@ -190,7 +190,7 @@ export async function listActiveProducts(): Promise<Product[]> {
     const products = ((await convex.query(api.products.listActiveProducts, {})) as Product[]).map(normalize);
     return products.length ? products : (sampleProducts as unknown as Product[]);
   } catch {
-    return sampleProducts;
+    return sampleProducts as unknown as Product[];
   }
 }
 
