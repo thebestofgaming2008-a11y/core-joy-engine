@@ -4,7 +4,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { ShopProvider } from "@/store/shop";
-import { AuthProvider } from "@/contexts/AuthContext";
+import { AuthProvider, useAuth } from "@/contexts/AuthContext";
 import { CurrencyProvider, useCurrency } from "@/contexts/CurrencyContext";
 import { upsertProfile } from "@/services/accountService";
 import { lazy, Suspense, useEffect, useRef } from "react";
