@@ -2079,110 +2079,305 @@ function ProductsPanel({
   onToggleActive: (product: Product) => void;
   onDuplicateProduct: (product: Product) => void;
 }) {
-  const [layout, setLayout] = useState<"compact" | "grid">("compact");
-  const filtered = products.filter((product) => product.name.toLowerCase().includes(query.toLowerCase()));
-  const active = products.filter((product) => product.is_active !== false).length;
-  const low = products.filter((product) => (product.stock_quantity ?? 0) > 0 && (product.stock_quantity ?? 0) <= 5).length;
-  const out = products.filter((product) => (product.stock_quantity ?? 0) <= 0).length;
+  const [layout, setLayout] = useState<"list" | "grid">("list");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived" | "low" | "out">("all");
+  const q = query.trim().toLowerCase();
+
+  const filtered = products.filter((product) => {
+    if (q && !(
+      product.name.toLowerCase().includes(q) ||
+      (product.sku ?? "").toLowerCase().includes(q) ||
+      (product.slug ?? "").toLowerCase().includes(q)
+    )) return false;
+    const stock = product.stock_quantity ?? 0;
+    const active = product.is_active !== false;
+    if (statusFilter === "active" && !active) return false;
+    if (statusFilter === "archived" && active) return false;
+    if (statusFilter === "low" && !(stock > 0 && stock <= 5)) return false;
+    if (statusFilter === "out" && stock > 0) return false;
+    return true;
+  });
+
+  const activeCount = products.filter((p) => p.is_active !== false).length;
+  const archivedCount = products.length - activeCount;
+  const lowCount = products.filter((p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5).length;
+  const outCount = products.filter((p) => (p.stock_quantity ?? 0) <= 0).length;
+  const inventoryValue = products.reduce((sum, p) => sum + (p.price_inr ?? p.price ?? 0) * (p.stock_quantity ?? 0), 0);
+
+  const tabs: Array<{ key: typeof statusFilter; label: string; count: number }> = [
+    { key: "all", label: "All", count: products.length },
+    { key: "active", label: "Active", count: activeCount },
+    { key: "archived", label: "Archived", count: archivedCount },
+    { key: "low", label: "Low stock", count: lowCount },
+    { key: "out", label: "Out of stock", count: outCount },
+  ];
+
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Stat label="Active products" value={active.toString()} />
-        <Stat label="Variants" value={products.length.toString()} />
-        <Stat label="Low stock (≤5)" value={low.toString()} accent={low ? "warning" : undefined} />
-        <Stat label="Out of stock" value={out.toString()} accent={out ? "destructive" : undefined} />
+    <div className="space-y-6">
+      {/* KPI strip */}
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[rgb(var(--vibe-border))] pb-5">
+        <KpiInline label="Products" value={products.length.toString()} />
+        <KpiInline label="Active" value={activeCount.toString()} />
+        <KpiInline label="Low stock" value={lowCount.toString()} tone={lowCount > 0 ? "warning" : undefined} />
+        <KpiInline label="Out of stock" value={outCount.toString()} tone={outCount > 0 ? "warning" : undefined} />
+        <KpiInline label="Inventory value" value={inr(inventoryValue)} />
       </div>
-      <div className="vibe-card overflow-hidden">
-        <div className="flex flex-col justify-between gap-3 border-b border-[rgb(var(--vibe-border))] px-4 py-4 sm:flex-row sm:items-center sm:px-6">
-          <SearchRow query={query} setQuery={setQuery} placeholder="Search products..." />
-          <div className="flex flex-wrap gap-2">
-            <div className="grid h-8 grid-cols-2 rounded-md bg-[rgb(var(--vibe-surface))] p-0.5 text-[11px]">
-              <button type="button" onClick={() => setLayout("compact")} className={`rounded px-3 transition-all ${layout === "compact" ? "bg-white shadow-sm" : "text-[rgb(var(--vibe-muted))]"}`}>Compact</button>
-              <button type="button" onClick={() => setLayout("grid")} className={`rounded px-3 transition-all ${layout === "grid" ? "bg-white shadow-sm" : "text-[rgb(var(--vibe-muted))]"}`}>Gallery</button>
-            </div>
-            <button type="button" onClick={onCreateProduct} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3 text-[12px] text-white transition-all hover:opacity-90"><Plus className="h-3.5 w-3.5" /> Add product</button>
-          </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[rgb(var(--vibe-muted))]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search products, SKU…"
+            className="h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white pl-9 pr-3 text-[13px] outline-none placeholder:text-[rgb(var(--vibe-muted))] focus:border-zinc-400"
+          />
         </div>
-        {layout === "compact" ? (
-          <div className="divide-y divide-[rgb(var(--vibe-border))]">
-            {filtered.map((product) => (
-              <div key={product.id} className="grid gap-3 px-4 py-3 transition-colors hover:bg-[rgb(var(--vibe-accent))]/50 sm:grid-cols-[minmax(0,1fr)_120px_110px_260px] sm:items-center sm:px-6">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="h-14 w-12 shrink-0 overflow-hidden rounded-md border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
-                    {product.cover_image_url ? <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-4 w-4 text-[rgb(var(--vibe-muted))]" /></div>}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium">{product.name}</p>
-                    <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "No SKU"} · {product.category ?? "Books"}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${(product.is_active ?? true) ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{(product.is_active ?? true) ? "Active" : "Archived"}</span>
-                      {(product.stock_quantity ?? 0) <= 5 && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-600">{(product.stock_quantity ?? 0) <= 0 ? "Out" : "Low stock"}</span>}
-                    </div>
-                  </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex h-9 items-center rounded-md border border-[rgb(var(--vibe-border))] bg-white p-0.5 text-[11px]">
+            <button type="button" onClick={() => setLayout("list")} className={cn("rounded px-3 h-7 transition-colors", layout === "list" ? "bg-[rgb(var(--vibe-foreground))] text-white" : "text-[rgb(var(--vibe-muted))]")}>List</button>
+            <button type="button" onClick={() => setLayout("grid")} className={cn("rounded px-3 h-7 transition-colors", layout === "grid" ? "bg-[rgb(var(--vibe-foreground))] text-white" : "text-[rgb(var(--vibe-muted))]")}>Grid</button>
+          </div>
+          <button type="button" onClick={onCreateProduct} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
+            <Plus className="h-3.5 w-3.5" /> Add product
+          </button>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-[rgb(var(--vibe-border))]">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setStatusFilter(t.key)}
+            className={cn(
+              "relative -mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[13px] transition-colors",
+              statusFilter === t.key
+                ? "border-[rgb(var(--vibe-foreground))] text-[rgb(var(--vibe-foreground))] font-medium"
+                : "border-transparent text-[rgb(var(--vibe-muted))] hover:text-[rgb(var(--vibe-foreground))]"
+            )}
+          >
+            {t.label}
+            <span className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] tabular-nums",
+              statusFilter === t.key ? "bg-[rgb(var(--vibe-foreground))] text-white" : "bg-[rgb(var(--vibe-surface))] text-[rgb(var(--vibe-muted))]"
+            )}>{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[rgb(var(--vibe-border))] py-16 text-center">
+          <Package className="h-7 w-7 text-[rgb(var(--vibe-muted))]" />
+          <p className="text-[14px] font-medium">No products match this view</p>
+          <p className="text-[12px] text-[rgb(var(--vibe-muted))]">{q ? "Try a different search." : "Add your first product to get started."}</p>
+          {!q && (
+            <button type="button" onClick={onCreateProduct} className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3.5 text-[13px] font-medium text-white">
+              <Plus className="h-3.5 w-3.5" /> Add product
+            </button>
+          )}
+        </div>
+      ) : layout === "list" ? (
+        <div className="hidden overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] sm:block">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[rgb(var(--vibe-surface))]/60 text-left text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">
+                <th className="px-5 py-3 font-medium">Product</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 text-right font-medium">Inventory</th>
+                <th className="px-5 py-3 text-right font-medium">Price</th>
+                <th className="w-10 px-2 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((product) => (
+                <ProductRowClean
+                  key={product.id}
+                  product={product}
+                  onStockChange={onStockChange}
+                  onEditProduct={onEditProduct}
+                  onDeleteProduct={onDeleteProduct}
+                  onToggleActive={onToggleActive}
+                  onDuplicateProduct={onDuplicateProduct}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((product) => (
+            <li key={product.id} className="group overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] bg-white transition-colors hover:border-zinc-300">
+              <div className="aspect-square overflow-hidden bg-[rgb(var(--vibe-surface))]">
+                {product.cover_image_url ? (
+                  <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                ) : (
+                  <div className="grid h-full place-items-center"><Package className="h-8 w-8 text-[rgb(var(--vibe-muted))]" /></div>
+                )}
+              </div>
+              <div className="p-3.5">
+                <p className="truncate text-[13px] font-medium">{product.name}</p>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="font-mono text-[13px] tabular-nums">{inr(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
+                  <StockBadge stock={product.stock_quantity ?? 0} />
                 </div>
-                <div className="flex items-center justify-between gap-3 sm:block">
-                  <span className="text-[11px] text-[rgb(var(--vibe-muted))] sm:block">Price</span>
-                  <span className="font-mono text-[13px] font-medium">{formatPrice(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
-                </div>
-                <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-start">
-                  <span className={`w-24 font-mono text-[12px] ${(product.stock_quantity ?? 0) === 0 ? "text-red-600" : (product.stock_quantity ?? 0) <= 5 ? "text-amber-600" : "text-[rgb(var(--vibe-muted))]"}`}>{product.stock_quantity ?? 0} stock</span>
-                  <button type="button" onClick={() => onStockChange(product, -1)} className="h-8 w-8 rounded border border-[rgb(var(--vibe-border))] text-[13px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">-</button>
-                  <button type="button" onClick={() => onStockChange(product, 1)} className="h-8 w-8 rounded border border-[rgb(var(--vibe-border))] text-[13px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">+</button>
-                </div>
-                <div className="grid grid-cols-5 gap-1">
-                  <Link to={`/product/${product.slug ?? product.id}`} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] px-2 text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">View</Link>
-                  <button type="button" onClick={() => onEditProduct(product)} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
-                  <button type="button" onClick={() => onDuplicateProduct(product)} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">Copy</button>
-                  <button type="button" onClick={() => onToggleActive(product)} className={`inline-flex h-9 items-center justify-center rounded-md border px-2 text-[11px] transition-colors ${(product.is_active ?? true) ? "border-[rgb(var(--vibe-border))] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                <div className="mt-3 grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => onEditProduct(product)} className="h-8 rounded-md border border-[rgb(var(--vibe-border))] text-[12px] hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
+                  <button type="button" onClick={() => onToggleActive(product)} className="h-8 rounded-md border border-[rgb(var(--vibe-border))] text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
                     {(product.is_active ?? true) ? "Archive" : "Activate"}
                   </button>
-                  <button type="button" onClick={() => onDeleteProduct(product)} className="grid h-9 place-items-center rounded-md border border-red-100 text-red-600 transition-colors hover:bg-red-50" aria-label={`Delete ${product.name}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : (
-        <ul className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Mobile list — always rendered when list mode + on small screens */}
+      {layout === "list" && filtered.length > 0 && (
+        <ul className="space-y-2 sm:hidden">
           {filtered.map((product) => (
-            <li key={product.id} className="rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm">
-              <div className="aspect-[4/3] overflow-hidden rounded-md bg-[rgb(var(--vibe-surface))]">
-                {product.cover_image_url ? <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-7 w-7 text-[rgb(var(--vibe-muted))]" /></div>}
-              </div>
-              {(product.images?.length ?? 0) > 0 && (
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {[product.cover_image_url, ...(product.images ?? [])].filter(Boolean).map((image, index) => (
-                    <img key={`${product.id}-${index}`} src={image ?? ""} alt="" className="h-14 w-14 shrink-0 rounded border border-[rgb(var(--vibe-border))] object-cover" />
-                  ))}
+            <li key={product.id} className="rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-3">
+              <div className="flex gap-3">
+                <div className="h-16 w-14 shrink-0 overflow-hidden rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+                  {product.cover_image_url ? <img src={product.cover_image_url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-4 w-4 text-[rgb(var(--vibe-muted))]" /></div>}
                 </div>
-              )}
-              <div className="mt-3 min-w-0">
-                <p className="truncate text-[13px] font-medium">{product.name}</p>
-                <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.category ?? "Books"} · 1 variant · {formatPrice(product.price_inr ?? product.price ?? 0)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium">{product.name}</p>
+                  <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "—"}</p>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <span className="font-mono text-[13px] font-semibold">{inr(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
+                    <StockBadge stock={product.stock_quantity ?? 0} />
+                  </div>
+                </div>
               </div>
-              <div className="mt-3 flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => onStockChange(product, -1)} className="h-6 w-6 rounded border border-[rgb(var(--vibe-border))] text-[12px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]">-</button>
-                <span className={`w-20 text-center font-mono text-[12px] ${(product.stock_quantity ?? 0) === 0 ? "text-red-600" : (product.stock_quantity ?? 0) <= 5 ? "text-amber-600" : "text-[rgb(var(--vibe-muted))]"}`}>{product.stock_quantity ?? 0} in stock</span>
-                <button type="button" onClick={() => onStockChange(product, 1)} className="h-6 w-6 rounded border border-[rgb(var(--vibe-border))] text-[12px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]">+</button>
-              </div>
-              <div className="mt-3 grid grid-cols-5 gap-1">
-                <Link to={`/product/${product.slug ?? product.id}`} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] px-2 text-[11px] hover:bg-[rgb(var(--vibe-accent))]">View</Link>
-                <button type="button" onClick={() => onEditProduct(product)} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
-                <button type="button" onClick={() => onDuplicateProduct(product)} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] hover:bg-[rgb(var(--vibe-accent))]">Copy</button>
-                <button type="button" onClick={() => onToggleActive(product)} className={`inline-flex h-8 items-center justify-center rounded-md border px-2 text-[11px] ${(product.is_active ?? true) ? "border-[rgb(var(--vibe-border))] text-[rgb(var(--vibe-muted))]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                <button type="button" onClick={() => onEditProduct(product)} className="h-9 rounded-md border border-[rgb(var(--vibe-border))] text-[12px]">Edit</button>
+                <button type="button" onClick={() => onToggleActive(product)} className="h-9 rounded-md border border-[rgb(var(--vibe-border))] text-[12px]">
                   {(product.is_active ?? true) ? "Archive" : "Activate"}
-                </button>
-                <button type="button" onClick={() => onDeleteProduct(product)} className="grid h-8 place-items-center rounded-md border border-red-100 text-red-600 hover:bg-red-50" aria-label={`Delete ${product.name}`}>
-                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
             </li>
           ))}
         </ul>
+      )}
+
+      <p className="text-right text-[11px] text-[rgb(var(--vibe-muted))]">
+        Showing {filtered.length} of {products.length} products
+      </p>
+    </div>
+  );
+}
+
+function StockBadge({ stock }: { stock: number }) {
+  if (stock <= 0) return <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">Out of stock</span>;
+  if (stock <= 5) return <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{stock} left</span>;
+  return <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{stock} in stock</span>;
+}
+
+function ProductRowClean({
+  product,
+  onStockChange,
+  onEditProduct,
+  onDeleteProduct,
+  onToggleActive,
+  onDuplicateProduct,
+}: {
+  product: Product;
+  onStockChange: (product: Product, delta: number) => void;
+  onEditProduct: (product: Product) => void;
+  onDeleteProduct: (product: Product) => void;
+  onToggleActive: (product: Product) => void;
+  onDuplicateProduct: (product: Product) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const stock = product.stock_quantity ?? 0;
+  const isActive = product.is_active ?? true;
+  const price = product.sale_price_inr ?? product.price_inr ?? product.price ?? 0;
+  const comparePrice = product.sale_price_inr ? product.price_inr ?? product.price : null;
+  return (
+    <tr className="border-t border-[rgb(var(--vibe-border))] transition-colors hover:bg-[rgb(var(--vibe-surface))]/60">
+      <td className="px-5 py-3">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-10 shrink-0 overflow-hidden rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+            {product.cover_image_url ? (
+              <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full place-items-center"><Package className="h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" /></div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <button type="button" onClick={() => onEditProduct(product)} className="block truncate text-left text-[13px] font-medium hover:underline">
+              {product.name}
+            </button>
+            <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "—"} · {product.category ?? "Books"}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-3">
+        <span className={cn(
+          "inline-flex items-center gap-1.5 text-[12px]",
+          isActive ? "text-emerald-700" : "text-[rgb(var(--vibe-muted))]"
+        )}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-emerald-500" : "bg-zinc-400")} />
+          {isActive ? "Active" : "Archived"}
+        </span>
+      </td>
+      <td className="px-5 py-3 text-right">
+        <div className="flex items-center justify-end gap-1.5">
+          <button type="button" onClick={() => onStockChange(product, -1)} className="grid h-7 w-7 place-items-center rounded border border-[rgb(var(--vibe-border))] text-[13px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" aria-label="Decrease stock">−</button>
+          <div className="w-20 text-center">
+            <p className={cn(
+              "font-mono text-[13px] tabular-nums",
+              stock === 0 ? "text-red-600 font-medium" : stock <= 5 ? "text-amber-600 font-medium" : "text-[rgb(var(--vibe-foreground))]"
+            )}>{stock}</p>
+            {stock <= 5 && <p className="text-[10px] text-[rgb(var(--vibe-muted))]">{stock === 0 ? "Out" : "Low"}</p>}
+          </div>
+          <button type="button" onClick={() => onStockChange(product, 1)} className="grid h-7 w-7 place-items-center rounded border border-[rgb(var(--vibe-border))] text-[13px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" aria-label="Increase stock">+</button>
+        </div>
+      </td>
+      <td className="px-5 py-3 text-right">
+        <p className="font-mono text-[13px] font-semibold tabular-nums">{inr(price)}</p>
+        {comparePrice && comparePrice !== price && (
+          <p className="font-mono text-[11px] text-[rgb(var(--vibe-muted))] line-through tabular-nums">{inr(comparePrice)}</p>
         )}
-      </div>
-    </>
+      </td>
+      <td className="px-2 py-3 text-right">
+        <div className="relative inline-block">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            className="grid h-8 w-8 place-items-center rounded-md text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]"
+            aria-label="Product actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-md border border-[rgb(var(--vibe-border))] bg-white shadow-lg">
+              <Link to={`/product/${product.slug ?? product.id}`} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <ExternalLink className="h-3.5 w-3.5" /> View on store
+              </Link>
+              <button type="button" onClick={() => { setMenuOpen(false); onEditProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </button>
+              <button type="button" onClick={() => { setMenuOpen(false); onDuplicateProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <CopyIcon className="h-3.5 w-3.5" /> Duplicate
+              </button>
+              <button type="button" onClick={() => { setMenuOpen(false); onToggleActive(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <Archive className="h-3.5 w-3.5" /> {isActive ? "Archive" : "Activate"}
+              </button>
+              <div className="border-t border-[rgb(var(--vibe-border))]" />
+              <button type="button" onClick={() => { setMenuOpen(false); onDeleteProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-red-600 hover:bg-red-50">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
