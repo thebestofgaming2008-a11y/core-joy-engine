@@ -52,7 +52,11 @@ export interface ProductInput {
 }
 
 export async function listAllProducts(): Promise<Product[]> {
-  return (await convex.query(api.products.listAllProducts, {})) as Product[];
+  try {
+    const v = await convex.query(api.products.listAllProducts, {});
+    if (Array.isArray(v) && v.length) return v as Product[];
+  } catch {}
+  return await listActiveProducts();
 }
 
 function slugify(s: string): string {
