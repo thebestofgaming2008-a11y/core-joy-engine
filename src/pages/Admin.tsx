@@ -1260,55 +1260,234 @@ function OrdersPanel({
   setActive: (value: OrderStatus) => void;
   onViewOrder: (order: AdminOrder) => void;
 }) {
-  const visible = orders.filter((order) => {
-    const q = query.trim().toLowerCase();
-    if (normalizeStatus(order) !== active) return false;
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (order: AdminOrder) => {
     if (!q) return true;
-    return [order.order_number, order.customer_name, order.customer_email, order.tracking_number, ...(order.items ?? []).map((item) => item.product_name)].some((value) => (value ?? "").toLowerCase().includes(q));
+    return [
+      order.order_number,
+      order.customer_name,
+      order.customer_email,
+      order.customer_phone,
+      order.tracking_number,
+      ...(order.items ?? []).map((item) => item.product_name),
+    ].some((value) => (value ?? "").toLowerCase().includes(q));
+  };
+
+  type TabKey = OrderStatus | "all" | "needs_action";
+  const tabs: Array<{ key: TabKey; label: string; count: number }> = [
+    { key: "all", label: "All", count: orders.length },
+    { key: "needs_action", label: "Needs action", count: counts.unshipped + counts.shipped_no_tracking },
+    { key: "unshipped", label: "Unshipped", count: counts.unshipped },
+    { key: "in_transit", label: "In transit", count: counts.in_transit },
+    { key: "delivered", label: "Delivered", count: counts.delivered },
+    { key: "cancelled", label: "Cancelled", count: counts.cancelled },
+  ];
+  const [tab, setTab] = useState<TabKey>("needs_action");
+
+  const visible = orders.filter((order) => {
+    if (!matchesQuery(order)) return false;
+    const s = normalizeStatus(order);
+    if (tab === "all") return true;
+    if (tab === "needs_action") return s === "unshipped" || s === "shipped_no_tracking";
+    return s === tab;
   });
+
+  // Keep parent `active` in sync (used elsewhere, e.g. for the original sidebar badge).
+  useEffect(() => {
+    if (tab === "all" || tab === "needs_action") setActive("unshipped");
+    else setActive(tab);
+  }, [tab, setActive]);
+
+  const totalRevenue = orders.reduce((sum, o) => sum + orderTotalInr(o), 0);
+
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {filters.map((filter) => {
-          const Icon = filter.icon;
-          const isActive = active === filter.key;
-          return (
-            <button key={filter.key} type="button" onClick={() => setActive(filter.key)} className={`rounded-lg border p-4 text-left transition-all ${isActive ? "border-zinc-400 bg-white shadow-sm" : "border-[rgb(var(--vibe-border))] bg-white hover:border-zinc-300"}`}>
-              <div className="mb-2.5 flex items-center justify-between">
-                <span className="truncate text-[12px] text-[rgb(var(--vibe-muted))]">{filter.label}</span>
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-zinc-900" : "text-zinc-400"}`} />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[22px] font-semibold tracking-tight tabular-nums">{counts[filter.key]}</span>
-                <span className="line-clamp-1 text-[11px] text-[rgb(var(--vibe-muted))]">{filter.description}</span>
-              </div>
+    <div className="space-y-6">
+      {/* Compact KPI strip — minimal, no cards */}
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[rgb(var(--vibe-border))] pb-5">
+        <KpiInline label="Orders" value={orders.length.toString()} />
+        <KpiInline label="Revenue" value={inr(totalRevenue)} />
+        <KpiInline label="Needs action" value={(counts.unshipped + counts.shipped_no_tracking).toString()} tone={counts.unshipped + counts.shipped_no_tracking > 0 ? "warning" : undefined} />
+        <KpiInline label="In transit" value={counts.in_transit.toString()} />
+      </div>
+
+      {/* Search + filter tabs */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[rgb(var(--vibe-muted))]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search orders, customers, tracking…"
+              className="h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white pl-9 pr-3 text-[13px] outline-none placeholder:text-[rgb(var(--vibe-muted))] focus:border-zinc-400"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1 border-b border-[rgb(var(--vibe-border))]">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={cn(
+                "relative -mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[13px] transition-colors",
+                tab === t.key
+                  ? "border-[rgb(var(--vibe-foreground))] text-[rgb(var(--vibe-foreground))] font-medium"
+                  : "border-transparent text-[rgb(var(--vibe-muted))] hover:text-[rgb(var(--vibe-foreground))]"
+              )}
+            >
+              {t.label}
+              <span className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] tabular-nums",
+                tab === t.key ? "bg-[rgb(var(--vibe-foreground))] text-white" : "bg-[rgb(var(--vibe-surface))] text-[rgb(var(--vibe-muted))]"
+              )}>{t.count}</span>
             </button>
-          );
-        })}
-      </div>
-      <SearchRow query={query} setQuery={setQuery} placeholder="Search by order, customer, product, tracking..." />
-      <div className="vibe-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[rgb(var(--vibe-border))] px-4 py-4 sm:px-6">
-          <h3 className="text-[13px] font-medium">{filters.find((filter) => filter.key === active)?.label}</h3>
-          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{visible.length} orders</span>
+          ))}
         </div>
-        <div className="hidden overflow-x-auto sm:block">
-          <table className="w-full min-w-[760px]">
-            <thead>
-              <tr>
-                {["Order", "Customer", "Product", "Amount", "Status", "Date", "Action"].map((head, index) => (
-                  <th key={head} className={`px-6 py-2.5 text-[11px] font-normal text-[rgb(var(--vibe-muted))] ${index === 3 || index === 6 ? "text-right" : "text-left"} ${index === 2 ? "hidden md:table-cell" : ""} ${index === 5 ? "hidden lg:table-cell" : ""}`}>
-                    {head}
-                  </th>
+      </div>
+
+      {/* Empty state */}
+      {visible.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[rgb(var(--vibe-border))] py-16 text-center">
+          <ShoppingCart className="h-7 w-7 text-[rgb(var(--vibe-muted))]" />
+          <p className="text-[14px] font-medium">No orders here</p>
+          <p className="text-[12px] text-[rgb(var(--vibe-muted))]">
+            {q ? "Try a different search." : "Orders matching this filter will appear here."}
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] sm:block">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[rgb(var(--vibe-surface))]/60 text-left text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">
+                  <th className="px-5 py-3 font-medium">Order</th>
+                  <th className="px-5 py-3 font-medium">Customer</th>
+                  <th className="hidden px-5 py-3 font-medium md:table-cell">Items</th>
+                  <th className="px-5 py-3 text-right font-medium">Total</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="hidden px-5 py-3 font-medium lg:table-cell">Date</th>
+                  <th className="w-10 px-2 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((order) => (
+                  <OrderRowClean key={order.id} order={order} onView={() => onViewOrder(order)} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>{visible.map((order) => <OrderRow key={order.id} order={order} onViewOrder={onViewOrder} />)}</tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <ul className="space-y-2 sm:hidden">
+            {visible.map((order) => {
+              const meta = statusMeta[normalizeStatus(order)];
+              const item = order.items?.[0];
+              return (
+                <li key={order.id}>
+                  <button
+                    type="button"
+                    onClick={() => onViewOrder(order)}
+                    className="block w-full rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-4 text-left transition-colors active:bg-[rgb(var(--vibe-accent))]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[12px] text-[rgb(var(--vibe-muted))]">#{order.order_number ?? order.id.slice(0, 8)}</span>
+                          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">·</span>
+                          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{fmtDate(order.created_at)}</span>
+                        </div>
+                        <p className="mt-1 truncate text-[14px] font-medium">{order.customer_name ?? order.customer_email ?? "Customer"}</p>
+                        <p className="mt-0.5 truncate text-[12px] text-[rgb(var(--vibe-muted))]">
+                          {item?.product_name ?? "Product"}{order.items && order.items.length > 1 ? ` + ${order.items.length - 1} more` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-[14px] font-semibold tabular-nums">{inr(orderTotalInr(order))}</p>
+                        <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-[rgb(var(--vibe-muted))]">
+                          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <p className="text-right text-[11px] text-[rgb(var(--vibe-muted))]">
+            Showing {visible.length} of {orders.length} orders
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KpiInline({ label, value, tone }: { label: string; value: string; tone?: "warning" }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">{label}</p>
+      <p className={cn(
+        "mt-1 text-[22px] font-semibold tracking-tight tabular-nums",
+        tone === "warning" && Number(value) > 0 ? "text-amber-600" : "text-[rgb(var(--vibe-foreground))]"
+      )}>{value}</p>
+    </div>
+  );
+}
+
+function OrderRowClean({ order, onView }: { order: AdminOrder; onView: () => void }) {
+  const meta = statusMeta[normalizeStatus(order)];
+  const item = order.items?.[0];
+  const itemCount = order.items?.reduce((sum, it) => sum + it.quantity, 0) ?? 0;
+  const needsShippingFollowUp = order.shipping_payment_status === "pending_whatsapp" || order.customer_country_type === "international";
+  return (
+    <tr
+      className="cursor-pointer border-t border-[rgb(var(--vibe-border))] transition-colors hover:bg-[rgb(var(--vibe-surface))]/60"
+      onClick={onView}
+    >
+      <td className="px-5 py-3.5">
+        <div className="flex flex-col">
+          <span className="font-mono text-[13px] font-medium">#{order.order_number ?? order.id.slice(0, 8)}</span>
+          {needsShippingFollowUp && (
+            <span className="mt-1 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">WhatsApp follow-up</span>
+          )}
         </div>
-        <MobileOrders orders={visible} onViewOrder={onViewOrder} />
-      </div>
-    </>
+      </td>
+      <td className="px-5 py-3.5">
+        <p className="text-[13px] font-medium">{order.customer_name ?? "—"}</p>
+        <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{order.customer_email ?? order.customer_phone ?? ""}</p>
+      </td>
+      <td className="hidden px-5 py-3.5 md:table-cell">
+        <div className="flex items-center gap-2.5">
+          {item?.product_image_url ? (
+            <img src={item.product_image_url} alt="" className="h-9 w-8 shrink-0 rounded border border-[rgb(var(--vibe-border))] object-cover" />
+          ) : (
+            <div className="grid h-9 w-8 shrink-0 place-items-center rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+              <Package className="h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-[13px]">{item?.product_name ?? "Product"}</p>
+            <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{itemCount} item{itemCount === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-3.5 text-right font-mono text-[13px] font-semibold tabular-nums">{inr(orderTotalInr(order))}</td>
+      <td className="px-5 py-3.5">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px]">
+          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+          <span className="text-[rgb(var(--vibe-foreground))]">{meta.label}</span>
+        </span>
+      </td>
+      <td className="hidden px-5 py-3.5 text-[12px] text-[rgb(var(--vibe-muted))] lg:table-cell">{fmtDate(order.created_at)}</td>
+      <td className="px-2 py-3.5 text-right">
+        <ArrowRight className="ml-auto h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" />
+      </td>
+    </tr>
   );
 }
 
