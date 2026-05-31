@@ -220,6 +220,15 @@ function fmtAmount(n: number) {
   return `$${n.toFixed(2)}`;
 }
 
+// India-only storefront: prefer INR everywhere in admin.
+function inr(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return "₹0";
+  return `₹${Math.round(n).toLocaleString("en-IN")}`;
+}
+function orderTotalInr(order: AdminOrder) {
+  return order.total_inr ?? order.total ?? 0;
+}
+
 function fmtDate(iso?: string | null) {
   if (!iso) return "No date";
   return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric" });
