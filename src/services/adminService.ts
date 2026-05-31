@@ -1,6 +1,11 @@
 import { api } from "../../convex/_generated/api";
 import { convex } from "@/integrations/convex/client";
 import type { Product } from "./productService";
+import { listActiveProducts } from "./productService";
+
+const safeArray = async <T,>(p: Promise<unknown>): Promise<T[]> => {
+  try { const v = await p; return Array.isArray(v) ? (v as T[]) : []; } catch { return []; }
+};
 
 export const PRODUCT_BUCKET = "product-images";
 
