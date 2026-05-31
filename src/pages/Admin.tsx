@@ -31,7 +31,7 @@ import {
   X,
   Image as ImageIcon,
 } from "lucide-react";
-import { Copy as CopyIcon, ExternalLink, MoreHorizontal, Archive, RefreshCw, Filter } from "lucide-react";
+import { Copy as CopyIcon, ExternalLink, MoreHorizontal, Archive } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   Area,
