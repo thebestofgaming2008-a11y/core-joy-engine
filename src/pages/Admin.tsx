@@ -31,6 +31,7 @@ import {
   X,
   Image as ImageIcon,
 } from "lucide-react";
+import { Copy as CopyIcon, ExternalLink, MoreHorizontal, Archive } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import {
   Area,
@@ -217,6 +218,15 @@ function isShippingReviewDue(rates: ShippingRate[]) {
 
 function fmtAmount(n: number) {
   return `$${n.toFixed(2)}`;
+}
+
+// India-only storefront: prefer INR everywhere in admin.
+function inr(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return "₹0";
+  return `₹${Math.round(n).toLocaleString("en-IN")}`;
+}
+function orderTotalInr(order: AdminOrder) {
+  return order.total_inr ?? order.total ?? 0;
 }
 
 function fmtDate(iso?: string | null) {
@@ -1250,55 +1260,234 @@ function OrdersPanel({
   setActive: (value: OrderStatus) => void;
   onViewOrder: (order: AdminOrder) => void;
 }) {
-  const visible = orders.filter((order) => {
-    const q = query.trim().toLowerCase();
-    if (normalizeStatus(order) !== active) return false;
+  const q = query.trim().toLowerCase();
+  const matchesQuery = (order: AdminOrder) => {
     if (!q) return true;
-    return [order.order_number, order.customer_name, order.customer_email, order.tracking_number, ...(order.items ?? []).map((item) => item.product_name)].some((value) => (value ?? "").toLowerCase().includes(q));
+    return [
+      order.order_number,
+      order.customer_name,
+      order.customer_email,
+      order.customer_phone,
+      order.tracking_number,
+      ...(order.items ?? []).map((item) => item.product_name),
+    ].some((value) => (value ?? "").toLowerCase().includes(q));
+  };
+
+  type TabKey = OrderStatus | "all" | "needs_action";
+  const tabs: Array<{ key: TabKey; label: string; count: number }> = [
+    { key: "all", label: "All", count: orders.length },
+    { key: "needs_action", label: "Needs action", count: counts.unshipped + counts.shipped_no_tracking },
+    { key: "unshipped", label: "Unshipped", count: counts.unshipped },
+    { key: "in_transit", label: "In transit", count: counts.in_transit },
+    { key: "delivered", label: "Delivered", count: counts.delivered },
+    { key: "cancelled", label: "Cancelled", count: counts.cancelled },
+  ];
+  const [tab, setTab] = useState<TabKey>("needs_action");
+
+  const visible = orders.filter((order) => {
+    if (!matchesQuery(order)) return false;
+    const s = normalizeStatus(order);
+    if (tab === "all") return true;
+    if (tab === "needs_action") return s === "unshipped" || s === "shipped_no_tracking";
+    return s === tab;
   });
+
+  // Keep parent `active` in sync (used elsewhere, e.g. for the original sidebar badge).
+  useEffect(() => {
+    if (tab === "all" || tab === "needs_action") setActive("unshipped");
+    else setActive(tab);
+  }, [tab, setActive]);
+
+  const totalRevenue = orders.reduce((sum, o) => sum + orderTotalInr(o), 0);
+
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        {filters.map((filter) => {
-          const Icon = filter.icon;
-          const isActive = active === filter.key;
-          return (
-            <button key={filter.key} type="button" onClick={() => setActive(filter.key)} className={`rounded-lg border p-4 text-left transition-all ${isActive ? "border-zinc-400 bg-white shadow-sm" : "border-[rgb(var(--vibe-border))] bg-white hover:border-zinc-300"}`}>
-              <div className="mb-2.5 flex items-center justify-between">
-                <span className="truncate text-[12px] text-[rgb(var(--vibe-muted))]">{filter.label}</span>
-                <Icon className={`h-4 w-4 shrink-0 ${isActive ? "text-zinc-900" : "text-zinc-400"}`} />
-              </div>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[22px] font-semibold tracking-tight tabular-nums">{counts[filter.key]}</span>
-                <span className="line-clamp-1 text-[11px] text-[rgb(var(--vibe-muted))]">{filter.description}</span>
-              </div>
+    <div className="space-y-6">
+      {/* Compact KPI strip — minimal, no cards */}
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[rgb(var(--vibe-border))] pb-5">
+        <KpiInline label="Orders" value={orders.length.toString()} />
+        <KpiInline label="Revenue" value={inr(totalRevenue)} />
+        <KpiInline label="Needs action" value={(counts.unshipped + counts.shipped_no_tracking).toString()} tone={counts.unshipped + counts.shipped_no_tracking > 0 ? "warning" : undefined} />
+        <KpiInline label="In transit" value={counts.in_transit.toString()} />
+      </div>
+
+      {/* Search + filter tabs */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[rgb(var(--vibe-muted))]" />
+            <input
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search orders, customers, tracking…"
+              className="h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white pl-9 pr-3 text-[13px] outline-none placeholder:text-[rgb(var(--vibe-muted))] focus:border-zinc-400"
+            />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-1 border-b border-[rgb(var(--vibe-border))]">
+          {tabs.map((t) => (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={cn(
+                "relative -mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[13px] transition-colors",
+                tab === t.key
+                  ? "border-[rgb(var(--vibe-foreground))] text-[rgb(var(--vibe-foreground))] font-medium"
+                  : "border-transparent text-[rgb(var(--vibe-muted))] hover:text-[rgb(var(--vibe-foreground))]"
+              )}
+            >
+              {t.label}
+              <span className={cn(
+                "rounded px-1.5 py-0.5 text-[10px] tabular-nums",
+                tab === t.key ? "bg-[rgb(var(--vibe-foreground))] text-white" : "bg-[rgb(var(--vibe-surface))] text-[rgb(var(--vibe-muted))]"
+              )}>{t.count}</span>
             </button>
-          );
-        })}
-      </div>
-      <SearchRow query={query} setQuery={setQuery} placeholder="Search by order, customer, product, tracking..." />
-      <div className="vibe-card overflow-hidden">
-        <div className="flex items-center justify-between border-b border-[rgb(var(--vibe-border))] px-4 py-4 sm:px-6">
-          <h3 className="text-[13px] font-medium">{filters.find((filter) => filter.key === active)?.label}</h3>
-          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{visible.length} orders</span>
+          ))}
         </div>
-        <div className="hidden overflow-x-auto sm:block">
-          <table className="w-full min-w-[760px]">
-            <thead>
-              <tr>
-                {["Order", "Customer", "Product", "Amount", "Status", "Date", "Action"].map((head, index) => (
-                  <th key={head} className={`px-6 py-2.5 text-[11px] font-normal text-[rgb(var(--vibe-muted))] ${index === 3 || index === 6 ? "text-right" : "text-left"} ${index === 2 ? "hidden md:table-cell" : ""} ${index === 5 ? "hidden lg:table-cell" : ""}`}>
-                    {head}
-                  </th>
+      </div>
+
+      {/* Empty state */}
+      {visible.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[rgb(var(--vibe-border))] py-16 text-center">
+          <ShoppingCart className="h-7 w-7 text-[rgb(var(--vibe-muted))]" />
+          <p className="text-[14px] font-medium">No orders here</p>
+          <p className="text-[12px] text-[rgb(var(--vibe-muted))]">
+            {q ? "Try a different search." : "Orders matching this filter will appear here."}
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Desktop table */}
+          <div className="hidden overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] sm:block">
+            <table className="w-full">
+              <thead>
+                <tr className="bg-[rgb(var(--vibe-surface))]/60 text-left text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">
+                  <th className="px-5 py-3 font-medium">Order</th>
+                  <th className="px-5 py-3 font-medium">Customer</th>
+                  <th className="hidden px-5 py-3 font-medium md:table-cell">Items</th>
+                  <th className="px-5 py-3 text-right font-medium">Total</th>
+                  <th className="px-5 py-3 font-medium">Status</th>
+                  <th className="hidden px-5 py-3 font-medium lg:table-cell">Date</th>
+                  <th className="w-10 px-2 py-3" />
+                </tr>
+              </thead>
+              <tbody>
+                {visible.map((order) => (
+                  <OrderRowClean key={order.id} order={order} onView={() => onViewOrder(order)} />
                 ))}
-              </tr>
-            </thead>
-            <tbody>{visible.map((order) => <OrderRow key={order.id} order={order} onViewOrder={onViewOrder} />)}</tbody>
-          </table>
+              </tbody>
+            </table>
+          </div>
+
+          {/* Mobile cards */}
+          <ul className="space-y-2 sm:hidden">
+            {visible.map((order) => {
+              const meta = statusMeta[normalizeStatus(order)];
+              const item = order.items?.[0];
+              return (
+                <li key={order.id}>
+                  <button
+                    type="button"
+                    onClick={() => onViewOrder(order)}
+                    className="block w-full rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-4 text-left transition-colors active:bg-[rgb(var(--vibe-accent))]"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-[12px] text-[rgb(var(--vibe-muted))]">#{order.order_number ?? order.id.slice(0, 8)}</span>
+                          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">·</span>
+                          <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{fmtDate(order.created_at)}</span>
+                        </div>
+                        <p className="mt-1 truncate text-[14px] font-medium">{order.customer_name ?? order.customer_email ?? "Customer"}</p>
+                        <p className="mt-0.5 truncate text-[12px] text-[rgb(var(--vibe-muted))]">
+                          {item?.product_name ?? "Product"}{order.items && order.items.length > 1 ? ` + ${order.items.length - 1} more` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-[14px] font-semibold tabular-nums">{inr(orderTotalInr(order))}</p>
+                        <p className="mt-1 inline-flex items-center gap-1.5 text-[11px] text-[rgb(var(--vibe-muted))]">
+                          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                          {meta.label}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+
+          <p className="text-right text-[11px] text-[rgb(var(--vibe-muted))]">
+            Showing {visible.length} of {orders.length} orders
+          </p>
+        </>
+      )}
+    </div>
+  );
+}
+
+function KpiInline({ label, value, tone }: { label: string; value: string; tone?: "warning" }) {
+  return (
+    <div>
+      <p className="text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">{label}</p>
+      <p className={cn(
+        "mt-1 text-[22px] font-semibold tracking-tight tabular-nums",
+        tone === "warning" && Number(value) > 0 ? "text-amber-600" : "text-[rgb(var(--vibe-foreground))]"
+      )}>{value}</p>
+    </div>
+  );
+}
+
+function OrderRowClean({ order, onView }: { order: AdminOrder; onView: () => void }) {
+  const meta = statusMeta[normalizeStatus(order)];
+  const item = order.items?.[0];
+  const itemCount = order.items?.reduce((sum, it) => sum + it.quantity, 0) ?? 0;
+  const needsShippingFollowUp = order.shipping_payment_status === "pending_whatsapp" || order.customer_country_type === "international";
+  return (
+    <tr
+      className="cursor-pointer border-t border-[rgb(var(--vibe-border))] transition-colors hover:bg-[rgb(var(--vibe-surface))]/60"
+      onClick={onView}
+    >
+      <td className="px-5 py-3.5">
+        <div className="flex flex-col">
+          <span className="font-mono text-[13px] font-medium">#{order.order_number ?? order.id.slice(0, 8)}</span>
+          {needsShippingFollowUp && (
+            <span className="mt-1 inline-flex w-fit items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">WhatsApp follow-up</span>
+          )}
         </div>
-        <MobileOrders orders={visible} onViewOrder={onViewOrder} />
-      </div>
-    </>
+      </td>
+      <td className="px-5 py-3.5">
+        <p className="text-[13px] font-medium">{order.customer_name ?? "—"}</p>
+        <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{order.customer_email ?? order.customer_phone ?? ""}</p>
+      </td>
+      <td className="hidden px-5 py-3.5 md:table-cell">
+        <div className="flex items-center gap-2.5">
+          {item?.product_image_url ? (
+            <img src={item.product_image_url} alt="" className="h-9 w-8 shrink-0 rounded border border-[rgb(var(--vibe-border))] object-cover" />
+          ) : (
+            <div className="grid h-9 w-8 shrink-0 place-items-center rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+              <Package className="h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <p className="truncate text-[13px]">{item?.product_name ?? "Product"}</p>
+            <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{itemCount} item{itemCount === 1 ? "" : "s"}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-3.5 text-right font-mono text-[13px] font-semibold tabular-nums">{inr(orderTotalInr(order))}</td>
+      <td className="px-5 py-3.5">
+        <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-[12px]">
+          <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+          <span className="text-[rgb(var(--vibe-foreground))]">{meta.label}</span>
+        </span>
+      </td>
+      <td className="hidden px-5 py-3.5 text-[12px] text-[rgb(var(--vibe-muted))] lg:table-cell">{fmtDate(order.created_at)}</td>
+      <td className="px-2 py-3.5 text-right">
+        <ArrowRight className="ml-auto h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" />
+      </td>
+    </tr>
   );
 }
 
@@ -1771,97 +1960,141 @@ function OrderDetailsDialog({
   };
   const canSendTracking = Boolean(form.trackingNumber.trim() && order.customer_phone);
   const statusChanged = form.status !== fulfillmentStatus(order);
+  const itemsSubtotal = (order.items ?? []).reduce((sum, it) => sum + it.subtotal, 0);
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/35 p-0 sm:items-center sm:p-6">
-      <div className="vibe-card max-h-[95vh] w-full max-w-5xl overflow-hidden rounded-b-none sm:rounded-b-lg">
-        <div className="flex items-center justify-between border-b border-[rgb(var(--vibe-border))] px-5 py-4">
-          <div>
-            <h2 className="text-[15px] font-semibold">Order {order.order_number ?? order.id.slice(0, 8)}</h2>
-            <p className="mt-0.5 text-[11px] text-[rgb(var(--vibe-muted))]">{order.customer_name ?? order.customer_email ?? "Customer"} · {fmtDate(order.created_at)}</p>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 p-0 sm:items-center sm:p-6 vibe-admin">
+      <div className="vibe-card flex max-h-[95vh] w-full max-w-5xl flex-col overflow-hidden rounded-b-none bg-white sm:rounded-lg">
+        {/* Header */}
+        <div className="flex items-start justify-between gap-3 border-b border-[rgb(var(--vibe-border))] px-6 py-5">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2.5">
+              <h2 className="text-[18px] font-semibold tracking-tight">Order #{order.order_number ?? order.id.slice(0, 8)}</h2>
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-[rgb(var(--vibe-border))] px-2 py-0.5 text-[11px]">
+                <span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />
+                {meta.label}
+              </span>
+            </div>
+            <p className="mt-1 text-[12px] text-[rgb(var(--vibe-muted))]">
+              {fmtDate(order.created_at)} · {order.customer_name ?? order.customer_email ?? "Customer"} · <span className="font-mono">{inr(total)}</span>
+            </p>
           </div>
-          <button type="button" onClick={onClose} className="grid h-8 w-8 place-items-center rounded-md hover:bg-[rgb(var(--vibe-accent))]" aria-label="Close order details"><X className="h-4 w-4" /></button>
+          <button type="button" onClick={onClose} className="grid h-9 w-9 shrink-0 place-items-center rounded-md text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))] hover:text-[rgb(var(--vibe-foreground))]" aria-label="Close">
+            <X className="h-4 w-4" />
+          </button>
         </div>
-        <div className="grid max-h-[calc(95vh-68px)] gap-5 overflow-y-auto p-4 sm:p-5 lg:grid-cols-[1fr_320px]">
-          <div className="space-y-3">
+
+        <div className="grid flex-1 gap-0 overflow-y-auto lg:grid-cols-[1fr_340px]">
+          {/* Left: items + activity */}
+          <div className="space-y-6 p-6">
             {needsShippingFollowUp && (
-              <div className="rounded-lg border border-amber-300 bg-amber-50 p-4 text-[13px] text-amber-900">
-                <p className="font-medium">International shipping follow-up needed</p>
-                <p className="mt-1 text-[12px] leading-5 text-amber-800">The customer paid the product total online. Message them on WhatsApp to collect the actual international shipping fee separately.</p>
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-4">
+                <p className="text-[13px] font-medium text-amber-900">International shipping follow-up needed</p>
+                <p className="mt-1 text-[12px] leading-5 text-amber-800">Customer paid the product total online. Collect the international shipping fee via WhatsApp before dispatching.</p>
               </div>
             )}
-            {(order.items ?? []).map((item) => {
-              const product = products.find((candidate) => candidate.id === item.product_id);
-              const images = [product?.cover_image_url, ...(product?.images ?? [])].filter(Boolean);
-              return (
-                <div key={item.id} className="rounded-lg border border-[rgb(var(--vibe-border))] p-3">
-                  <div className="flex gap-3">
-                    <div className="h-24 w-20 shrink-0 overflow-hidden rounded-md bg-[rgb(var(--vibe-surface))]">
-                      {images[0] ? <img src={images[0]} alt={item.product_name ?? "Product"} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-5 w-5 text-[rgb(var(--vibe-muted))]" /></div>}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[13px] font-medium">{item.product_name ?? product?.name ?? "Product"}</p>
-                      <p className="mt-1 text-[11px] text-[rgb(var(--vibe-muted))]">Qty {item.quantity} · {formatPrice(item.unit_price)} each · {formatPrice(item.subtotal)}</p>
-                      {(item.selected_color || item.selected_size) && (
+
+            <section>
+              <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--vibe-muted))]">Items ({(order.items ?? []).length})</h3>
+              <div className="overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))]">
+                {(order.items ?? []).map((item, idx) => {
+                  const product = products.find((candidate) => candidate.id === item.product_id);
+                  const image = item.product_image_url || product?.cover_image_url || product?.images?.[0];
+                  return (
+                    <div key={item.id} className={cn("flex items-start gap-3 p-4", idx > 0 && "border-t border-[rgb(var(--vibe-border))]")}>
+                      <div className="h-16 w-14 shrink-0 overflow-hidden rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+                        {image ? <img src={image} alt={item.product_name ?? "Product"} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-4 w-4 text-[rgb(var(--vibe-muted))]" /></div>}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13px] font-medium leading-snug">{item.product_name ?? product?.name ?? "Product"}</p>
+                        {(item.selected_color || item.selected_size) && (
+                          <p className="mt-0.5 text-[11px] text-[rgb(var(--vibe-muted))]">
+                            {[item.selected_color && `Colour: ${item.selected_color}`, item.selected_size && `Size: ${item.selected_size}`].filter(Boolean).join(" · ")}
+                          </p>
+                        )}
                         <p className="mt-1 text-[11px] text-[rgb(var(--vibe-muted))]">
-                          {[item.selected_color && `Colour: ${item.selected_color}`, item.selected_size && `Size: ${item.selected_size}`].filter(Boolean).join(" / ")}
+                          {inr(item.unit_price)} × {item.quantity}
                         </p>
-                      )}
-                      {product && <Link to={`/product/${product.slug ?? product.id}`} className="mt-2 inline-flex h-7 items-center rounded-md border border-[rgb(var(--vibe-border))] px-2 text-[11px]">View product</Link>}
+                      </div>
+                      <p className="font-mono text-[13px] font-semibold tabular-nums">{inr(item.subtotal)}</p>
                     </div>
-                  </div>
-                  {images.length > 1 && (
-                    <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-                      {images.map((image, index) => <img key={`${item.id}-${index}`} src={image ?? ""} alt="" className="h-14 w-14 shrink-0 rounded border border-[rgb(var(--vibe-border))] object-cover" />)}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          <aside className="space-y-3">
-            <div className="rounded-lg border border-[rgb(var(--vibe-border))] p-4">
-              <p className="text-[11px] text-[rgb(var(--vibe-muted))]">Status</p>
-              <p className="mt-1 inline-flex items-center gap-1.5 text-[13px]"><span className={`h-1.5 w-1.5 rounded-full ${meta.dot}`} />{meta.label}</p>
-              <button type="button" onClick={() => onCancelOrder(order)} className="mt-2 h-8 w-full rounded-md border border-red-100 px-3 text-[12px] text-red-600">Cancel order</button>
-            </div>
-            <div className="rounded-lg border border-[rgb(var(--vibe-border))] p-4">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-[13px] font-medium">Fulfillment</p>
-                <Truck className="h-4 w-4 text-[rgb(var(--vibe-muted))]" />
+                  );
+                })}
               </div>
-              <label className="mt-3 block">
-                <span className="mb-1.5 block text-[11px] text-[rgb(var(--vibe-muted))]">Order status</span>
-                <select value={form.status} onChange={(event) => updateField("status", event.target.value as FulfillmentStatus)} className="h-11 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white px-3 text-[13px] outline-none focus:ring-1 focus:ring-zinc-500">
-                  {statuses.map((status) => <option key={status.key} value={status.key}>{status.label}</option>)}
+
+              {/* Totals */}
+              <div className="mt-4 ml-auto max-w-xs space-y-1.5 text-[13px]">
+                <div className="flex justify-between text-[rgb(var(--vibe-muted))]">
+                  <span>Subtotal</span><span className="font-mono tabular-nums">{inr(itemsSubtotal)}</span>
+                </div>
+                <div className="flex justify-between text-[rgb(var(--vibe-muted))]">
+                  <span>Shipping</span>
+                  <span className="font-mono tabular-nums">{needsShippingFollowUp ? "Pending" : inr(order.shipping_cost ?? Math.max(0, total - itemsSubtotal))}</span>
+                </div>
+                <div className="flex justify-between border-t border-[rgb(var(--vibe-border))] pt-1.5 font-semibold">
+                  <span>Total</span><span className="font-mono tabular-nums">{inr(total)}</span>
+                </div>
+              </div>
+            </section>
+          </div>
+
+          {/* Right: sidebar */}
+          <aside className="space-y-6 border-t border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]/30 p-6 lg:border-l lg:border-t-0">
+            {/* Fulfillment */}
+            <section>
+              <h3 className="mb-3 flex items-center gap-2 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--vibe-muted))]">
+                <Truck className="h-3.5 w-3.5" /> Fulfillment
+              </h3>
+              <label className="block">
+                <span className="mb-1 block text-[11px] text-[rgb(var(--vibe-muted))]">Status</span>
+                <select value={form.status} onChange={(e) => updateField("status", e.target.value as FulfillmentStatus)} className="h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white px-3 text-[13px] outline-none focus:border-zinc-400">
+                  {statuses.map((s) => <option key={s.key} value={s.key}>{s.label}</option>)}
                 </select>
               </label>
-              <button type="button" onClick={saveStatus} disabled={savingStatus || !statusChanged} className="mt-2 h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] px-3 text-[12px] transition-colors hover:bg-[rgb(var(--vibe-accent))] disabled:opacity-50">
-                {savingStatus ? "Updating status..." : "Update order status"}
+              <button type="button" onClick={saveStatus} disabled={savingStatus || !statusChanged} className="mt-2 h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white text-[12px] font-medium transition-colors hover:bg-[rgb(var(--vibe-accent))] disabled:opacity-40">
+                {savingStatus ? "Updating…" : "Update status"}
               </button>
-              <div className="mt-3 space-y-2">
-                <ProductInputField label="Carrier" value={form.carrier} onChange={(value) => updateField("carrier", value)} placeholder="DHL, PostNL, Bpost..." />
-                <ProductInputField label="Tracking number" value={form.trackingNumber} onChange={(value) => updateField("trackingNumber", value)} placeholder="Paste or scan code" />
-                <ProductInputField label="Tracking URL" value={form.trackingUrl} onChange={(value) => updateField("trackingUrl", value)} placeholder="https://..." />
+
+              <div className="mt-4 space-y-2">
+                <ProductInputField label="Carrier" value={form.carrier} onChange={(v) => updateField("carrier", v)} placeholder="DTDC, India Post, BlueDart…" />
+                <ProductInputField label="Tracking number" value={form.trackingNumber} onChange={(v) => updateField("trackingNumber", v)} placeholder="Paste or scan code" />
+                <ProductInputField label="Tracking URL" value={form.trackingUrl} onChange={(v) => updateField("trackingUrl", v)} placeholder="https://…" />
               </div>
-              <p className="mt-3 text-[11px] leading-5 text-[rgb(var(--vibe-muted))]">Tracking is saved only when it opens WhatsApp for the customer. No separate silent save.</p>
-              <button type="button" onClick={sendTracking} disabled={saving || !canSendTracking} className="mt-3 h-11 w-full rounded-md bg-[rgb(var(--vibe-foreground))] px-3 text-[12px] font-medium text-white transition-all hover:opacity-90 disabled:opacity-50">
-                {saving ? "Opening WhatsApp..." : "Send tracking on WhatsApp"}
+
+              <button type="button" onClick={sendTracking} disabled={saving || !canSendTracking} className="mt-3 h-10 w-full rounded-md bg-emerald-600 px-3 text-[13px] font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40">
+                {saving ? "Opening WhatsApp…" : "Send tracking on WhatsApp"}
               </button>
-              {!order.customer_phone && <p className="mt-2 text-[11px] text-red-600">Customer phone is required before tracking can be sent.</p>}
-            </div>
-            <div className="rounded-lg border border-[rgb(var(--vibe-border))] p-4 text-[12px]">
-              <p className="font-medium">Customer</p>
-              <p className="mt-1 text-[rgb(var(--vibe-muted))]">{order.customer_name ?? "No name"}</p>
-              <p className="text-[rgb(var(--vibe-muted))]">{order.customer_email ?? "No email"}</p>
-              <p className="text-[rgb(var(--vibe-muted))]">{order.customer_phone ?? "No phone"}</p>
-            </div>
-            <div className="rounded-lg border border-[rgb(var(--vibe-border))] p-4 text-[12px]">
-              <div className="flex justify-between"><span>Payment</span><span className="capitalize">{order.payment_status ?? "unknown"}</span></div>
-              <div className="mt-2 flex justify-between gap-3"><span>Shipping</span><span className="text-right capitalize">{needsShippingFollowUp ? "WhatsApp follow-up" : "Included"}</span></div>
-              {order.shipping_payment_note && <p className="mt-2 rounded-md bg-[rgb(var(--vibe-surface))] px-2 py-1.5 text-[11px] text-[rgb(var(--vibe-muted))]">{order.shipping_payment_note}</p>}
-              <div className="mt-2 flex justify-between font-medium"><span>Total</span><span>{formatPrice(total)}</span></div>
-              <div className="mt-2 text-[rgb(var(--vibe-muted))]">Tracking: {order.tracking_number ?? "Not added"}</div>
-            </div>
+              {!order.customer_phone && <p className="mt-2 text-[11px] text-red-600">Customer phone is required.</p>}
+              <p className="mt-2 text-[10px] leading-4 text-[rgb(var(--vibe-muted))]">Tracking saves automatically when WhatsApp opens.</p>
+            </section>
+
+            {/* Customer */}
+            <section>
+              <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--vibe-muted))]">Customer</h3>
+              <div className="space-y-1.5 text-[12px]">
+                <p className="font-medium text-[13px]">{order.customer_name ?? "—"}</p>
+                {order.customer_email && <p className="text-[rgb(var(--vibe-muted))] break-all">{order.customer_email}</p>}
+                {order.customer_phone && <p className="text-[rgb(var(--vibe-muted))]">{order.customer_phone}</p>}
+              </div>
+            </section>
+
+            {/* Payment */}
+            <section>
+              <h3 className="mb-3 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--vibe-muted))]">Payment</h3>
+              <div className="space-y-1.5 text-[12px]">
+                <div className="flex justify-between"><span className="text-[rgb(var(--vibe-muted))]">Status</span><span className="capitalize">{order.payment_status ?? "—"}</span></div>
+                <div className="flex justify-between"><span className="text-[rgb(var(--vibe-muted))]">Total</span><span className="font-mono font-semibold tabular-nums">{inr(total)}</span></div>
+                {order.shipping_payment_note && (
+                  <p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[11px] text-amber-800">{order.shipping_payment_note}</p>
+                )}
+              </div>
+            </section>
+
+            {/* Danger */}
+            <section className="border-t border-[rgb(var(--vibe-border))] pt-4">
+              <button type="button" onClick={() => onCancelOrder(order)} className="h-9 w-full rounded-md border border-red-200 bg-white text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50">
+                Cancel order
+              </button>
+            </section>
           </aside>
         </div>
       </div>
@@ -1890,110 +2123,305 @@ function ProductsPanel({
   onToggleActive: (product: Product) => void;
   onDuplicateProduct: (product: Product) => void;
 }) {
-  const [layout, setLayout] = useState<"compact" | "grid">("compact");
-  const filtered = products.filter((product) => product.name.toLowerCase().includes(query.toLowerCase()));
-  const active = products.filter((product) => product.is_active !== false).length;
-  const low = products.filter((product) => (product.stock_quantity ?? 0) > 0 && (product.stock_quantity ?? 0) <= 5).length;
-  const out = products.filter((product) => (product.stock_quantity ?? 0) <= 0).length;
+  const [layout, setLayout] = useState<"list" | "grid">("list");
+  const [statusFilter, setStatusFilter] = useState<"all" | "active" | "archived" | "low" | "out">("all");
+  const q = query.trim().toLowerCase();
+
+  const filtered = products.filter((product) => {
+    if (q && !(
+      product.name.toLowerCase().includes(q) ||
+      (product.sku ?? "").toLowerCase().includes(q) ||
+      (product.slug ?? "").toLowerCase().includes(q)
+    )) return false;
+    const stock = product.stock_quantity ?? 0;
+    const active = product.is_active !== false;
+    if (statusFilter === "active" && !active) return false;
+    if (statusFilter === "archived" && active) return false;
+    if (statusFilter === "low" && !(stock > 0 && stock <= 5)) return false;
+    if (statusFilter === "out" && stock > 0) return false;
+    return true;
+  });
+
+  const activeCount = products.filter((p) => p.is_active !== false).length;
+  const archivedCount = products.length - activeCount;
+  const lowCount = products.filter((p) => (p.stock_quantity ?? 0) > 0 && (p.stock_quantity ?? 0) <= 5).length;
+  const outCount = products.filter((p) => (p.stock_quantity ?? 0) <= 0).length;
+  const inventoryValue = products.reduce((sum, p) => sum + (p.price_inr ?? p.price ?? 0) * (p.stock_quantity ?? 0), 0);
+
+  const tabs: Array<{ key: typeof statusFilter; label: string; count: number }> = [
+    { key: "all", label: "All", count: products.length },
+    { key: "active", label: "Active", count: activeCount },
+    { key: "archived", label: "Archived", count: archivedCount },
+    { key: "low", label: "Low stock", count: lowCount },
+    { key: "out", label: "Out of stock", count: outCount },
+  ];
+
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Stat label="Active products" value={active.toString()} />
-        <Stat label="Variants" value={products.length.toString()} />
-        <Stat label="Low stock (≤5)" value={low.toString()} accent={low ? "warning" : undefined} />
-        <Stat label="Out of stock" value={out.toString()} accent={out ? "destructive" : undefined} />
+    <div className="space-y-6">
+      {/* KPI strip */}
+      <div className="flex flex-wrap items-end gap-x-10 gap-y-4 border-b border-[rgb(var(--vibe-border))] pb-5">
+        <KpiInline label="Products" value={products.length.toString()} />
+        <KpiInline label="Active" value={activeCount.toString()} />
+        <KpiInline label="Low stock" value={lowCount.toString()} tone={lowCount > 0 ? "warning" : undefined} />
+        <KpiInline label="Out of stock" value={outCount.toString()} tone={outCount > 0 ? "warning" : undefined} />
+        <KpiInline label="Inventory value" value={inr(inventoryValue)} />
       </div>
-      <div className="vibe-card overflow-hidden">
-        <div className="flex flex-col justify-between gap-3 border-b border-[rgb(var(--vibe-border))] px-4 py-4 sm:flex-row sm:items-center sm:px-6">
-          <SearchRow query={query} setQuery={setQuery} placeholder="Search products..." />
-          <div className="flex flex-wrap gap-2">
-            <div className="grid h-8 grid-cols-2 rounded-md bg-[rgb(var(--vibe-surface))] p-0.5 text-[11px]">
-              <button type="button" onClick={() => setLayout("compact")} className={`rounded px-3 transition-all ${layout === "compact" ? "bg-white shadow-sm" : "text-[rgb(var(--vibe-muted))]"}`}>Compact</button>
-              <button type="button" onClick={() => setLayout("grid")} className={`rounded px-3 transition-all ${layout === "grid" ? "bg-white shadow-sm" : "text-[rgb(var(--vibe-muted))]"}`}>Gallery</button>
-            </div>
-            <button type="button" onClick={onCreateProduct} className="inline-flex h-8 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3 text-[12px] text-white transition-all hover:opacity-90"><Plus className="h-3.5 w-3.5" /> Add product</button>
-          </div>
+
+      {/* Toolbar */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="relative flex-1 sm:max-w-md">
+          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-[rgb(var(--vibe-muted))]" />
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search products, SKU…"
+            className="h-9 w-full rounded-md border border-[rgb(var(--vibe-border))] bg-white pl-9 pr-3 text-[13px] outline-none placeholder:text-[rgb(var(--vibe-muted))] focus:border-zinc-400"
+          />
         </div>
-        {layout === "compact" ? (
-          <div className="divide-y divide-[rgb(var(--vibe-border))]">
-            {filtered.map((product) => (
-              <div key={product.id} className="grid gap-3 px-4 py-3 transition-colors hover:bg-[rgb(var(--vibe-accent))]/50 sm:grid-cols-[minmax(0,1fr)_120px_110px_260px] sm:items-center sm:px-6">
-                <div className="flex min-w-0 items-center gap-3">
-                  <div className="h-14 w-12 shrink-0 overflow-hidden rounded-md border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
-                    {product.cover_image_url ? <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-4 w-4 text-[rgb(var(--vibe-muted))]" /></div>}
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium">{product.name}</p>
-                    <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "No SKU"} · {product.category ?? "Books"}</p>
-                    <div className="mt-1 flex flex-wrap gap-1">
-                      <span className={`rounded px-1.5 py-0.5 text-[10px] ${(product.is_active ?? true) ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{(product.is_active ?? true) ? "Active" : "Archived"}</span>
-                      {(product.stock_quantity ?? 0) <= 5 && <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] text-red-600">{(product.stock_quantity ?? 0) <= 0 ? "Out" : "Low stock"}</span>}
-                    </div>
-                  </div>
+        <div className="flex items-center gap-2">
+          <div className="inline-flex h-9 items-center rounded-md border border-[rgb(var(--vibe-border))] bg-white p-0.5 text-[11px]">
+            <button type="button" onClick={() => setLayout("list")} className={cn("rounded px-3 h-7 transition-colors", layout === "list" ? "bg-[rgb(var(--vibe-foreground))] text-white" : "text-[rgb(var(--vibe-muted))]")}>List</button>
+            <button type="button" onClick={() => setLayout("grid")} className={cn("rounded px-3 h-7 transition-colors", layout === "grid" ? "bg-[rgb(var(--vibe-foreground))] text-white" : "text-[rgb(var(--vibe-muted))]")}>Grid</button>
+          </div>
+          <button type="button" onClick={onCreateProduct} className="inline-flex h-9 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3.5 text-[13px] font-medium text-white transition-opacity hover:opacity-90">
+            <Plus className="h-3.5 w-3.5" /> Add product
+          </button>
+        </div>
+      </div>
+
+      {/* Filter tabs */}
+      <div className="flex flex-wrap gap-1 border-b border-[rgb(var(--vibe-border))]">
+        {tabs.map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => setStatusFilter(t.key)}
+            className={cn(
+              "relative -mb-px flex items-center gap-2 border-b-2 px-3 py-2 text-[13px] transition-colors",
+              statusFilter === t.key
+                ? "border-[rgb(var(--vibe-foreground))] text-[rgb(var(--vibe-foreground))] font-medium"
+                : "border-transparent text-[rgb(var(--vibe-muted))] hover:text-[rgb(var(--vibe-foreground))]"
+            )}
+          >
+            {t.label}
+            <span className={cn(
+              "rounded px-1.5 py-0.5 text-[10px] tabular-nums",
+              statusFilter === t.key ? "bg-[rgb(var(--vibe-foreground))] text-white" : "bg-[rgb(var(--vibe-surface))] text-[rgb(var(--vibe-muted))]"
+            )}>{t.count}</span>
+          </button>
+        ))}
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-[rgb(var(--vibe-border))] py-16 text-center">
+          <Package className="h-7 w-7 text-[rgb(var(--vibe-muted))]" />
+          <p className="text-[14px] font-medium">No products match this view</p>
+          <p className="text-[12px] text-[rgb(var(--vibe-muted))]">{q ? "Try a different search." : "Add your first product to get started."}</p>
+          {!q && (
+            <button type="button" onClick={onCreateProduct} className="mt-2 inline-flex h-9 items-center gap-1.5 rounded-md bg-[rgb(var(--vibe-foreground))] px-3.5 text-[13px] font-medium text-white">
+              <Plus className="h-3.5 w-3.5" /> Add product
+            </button>
+          )}
+        </div>
+      ) : layout === "list" ? (
+        <div className="hidden overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] sm:block">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-[rgb(var(--vibe-surface))]/60 text-left text-[11px] uppercase tracking-wider text-[rgb(var(--vibe-muted))]">
+                <th className="px-5 py-3 font-medium">Product</th>
+                <th className="px-5 py-3 font-medium">Status</th>
+                <th className="px-5 py-3 text-right font-medium">Inventory</th>
+                <th className="px-5 py-3 text-right font-medium">Price</th>
+                <th className="w-10 px-2 py-3" />
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((product) => (
+                <ProductRowClean
+                  key={product.id}
+                  product={product}
+                  onStockChange={onStockChange}
+                  onEditProduct={onEditProduct}
+                  onDeleteProduct={onDeleteProduct}
+                  onToggleActive={onToggleActive}
+                  onDuplicateProduct={onDuplicateProduct}
+                />
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <ul className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {filtered.map((product) => (
+            <li key={product.id} className="group overflow-hidden rounded-lg border border-[rgb(var(--vibe-border))] bg-white transition-colors hover:border-zinc-300">
+              <div className="aspect-square overflow-hidden bg-[rgb(var(--vibe-surface))]">
+                {product.cover_image_url ? (
+                  <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                ) : (
+                  <div className="grid h-full place-items-center"><Package className="h-8 w-8 text-[rgb(var(--vibe-muted))]" /></div>
+                )}
+              </div>
+              <div className="p-3.5">
+                <p className="truncate text-[13px] font-medium">{product.name}</p>
+                <div className="mt-1 flex items-center justify-between">
+                  <span className="font-mono text-[13px] tabular-nums">{inr(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
+                  <StockBadge stock={product.stock_quantity ?? 0} />
                 </div>
-                <div className="flex items-center justify-between gap-3 sm:block">
-                  <span className="text-[11px] text-[rgb(var(--vibe-muted))] sm:block">Price</span>
-                  <span className="font-mono text-[13px] font-medium">{formatPrice(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
-                </div>
-                <div className="flex shrink-0 items-center justify-between gap-2 sm:justify-start">
-                  <span className={`w-24 font-mono text-[12px] ${(product.stock_quantity ?? 0) === 0 ? "text-red-600" : (product.stock_quantity ?? 0) <= 5 ? "text-amber-600" : "text-[rgb(var(--vibe-muted))]"}`}>{product.stock_quantity ?? 0} stock</span>
-                  <button type="button" onClick={() => onStockChange(product, -1)} className="h-8 w-8 rounded border border-[rgb(var(--vibe-border))] text-[13px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">-</button>
-                  <button type="button" onClick={() => onStockChange(product, 1)} className="h-8 w-8 rounded border border-[rgb(var(--vibe-border))] text-[13px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">+</button>
-                </div>
-                <div className="grid grid-cols-5 gap-1">
-                  <Link to={`/product/${product.slug ?? product.id}`} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] px-2 text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">View</Link>
-                  <button type="button" onClick={() => onEditProduct(product)} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
-                  <button type="button" onClick={() => onDuplicateProduct(product)} className="inline-flex h-9 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] transition-colors hover:bg-[rgb(var(--vibe-accent))]">Copy</button>
-                  <button type="button" onClick={() => onToggleActive(product)} className={`inline-flex h-9 items-center justify-center rounded-md border px-2 text-[11px] transition-colors ${(product.is_active ?? true) ? "border-[rgb(var(--vibe-border))] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+                <div className="mt-3 grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => onEditProduct(product)} className="h-8 rounded-md border border-[rgb(var(--vibe-border))] text-[12px] hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
+                  <button type="button" onClick={() => onToggleActive(product)} className="h-8 rounded-md border border-[rgb(var(--vibe-border))] text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
                     {(product.is_active ?? true) ? "Archive" : "Activate"}
                   </button>
-                  <button type="button" onClick={() => onDeleteProduct(product)} className="grid h-9 place-items-center rounded-md border border-red-100 text-red-600 transition-colors hover:bg-red-50" aria-label={`Delete ${product.name}`}>
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
                 </div>
               </div>
-            ))}
-          </div>
-        ) : (
-        <ul className="grid gap-4 p-4 sm:grid-cols-2 xl:grid-cols-3">
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* Mobile list — always rendered when list mode + on small screens */}
+      {layout === "list" && filtered.length > 0 && (
+        <ul className="space-y-2 sm:hidden">
           {filtered.map((product) => (
-            <li key={product.id} className="rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-3 transition-all hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-sm">
-              <div className="aspect-[4/3] overflow-hidden rounded-md bg-[rgb(var(--vibe-surface))]">
-                {product.cover_image_url ? <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-7 w-7 text-[rgb(var(--vibe-muted))]" /></div>}
-              </div>
-              {(product.images?.length ?? 0) > 0 && (
-                <div className="mt-2 flex gap-2 overflow-x-auto pb-1">
-                  {[product.cover_image_url, ...(product.images ?? [])].filter(Boolean).map((image, index) => (
-                    <img key={`${product.id}-${index}`} src={image ?? ""} alt="" className="h-14 w-14 shrink-0 rounded border border-[rgb(var(--vibe-border))] object-cover" />
-                  ))}
+            <li key={product.id} className="rounded-lg border border-[rgb(var(--vibe-border))] bg-white p-3">
+              <div className="flex gap-3">
+                <div className="h-16 w-14 shrink-0 overflow-hidden rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+                  {product.cover_image_url ? <img src={product.cover_image_url} alt="" className="h-full w-full object-cover" /> : <div className="grid h-full place-items-center"><Package className="h-4 w-4 text-[rgb(var(--vibe-muted))]" /></div>}
                 </div>
-              )}
-              <div className="mt-3 min-w-0">
-                <p className="truncate text-[13px] font-medium">{product.name}</p>
-                <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.category ?? "Books"} · 1 variant · {formatPrice(product.price_inr ?? product.price ?? 0)}</p>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-medium">{product.name}</p>
+                  <p className="text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "—"}</p>
+                  <div className="mt-1.5 flex items-center justify-between">
+                    <span className="font-mono text-[13px] font-semibold">{inr(product.sale_price_inr ?? product.price_inr ?? product.price ?? 0)}</span>
+                    <StockBadge stock={product.stock_quantity ?? 0} />
+                  </div>
+                </div>
               </div>
-              <div className="mt-3 flex shrink-0 items-center gap-1">
-                <button type="button" onClick={() => onStockChange(product, -1)} className="h-6 w-6 rounded border border-[rgb(var(--vibe-border))] text-[12px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]">-</button>
-                <span className={`w-20 text-center font-mono text-[12px] ${(product.stock_quantity ?? 0) === 0 ? "text-red-600" : (product.stock_quantity ?? 0) <= 5 ? "text-amber-600" : "text-[rgb(var(--vibe-muted))]"}`}>{product.stock_quantity ?? 0} in stock</span>
-                <button type="button" onClick={() => onStockChange(product, 1)} className="h-6 w-6 rounded border border-[rgb(var(--vibe-border))] text-[12px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]">+</button>
-              </div>
-              <div className="mt-3 grid grid-cols-5 gap-1">
-                <Link to={`/product/${product.slug ?? product.id}`} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] px-2 text-[11px] hover:bg-[rgb(var(--vibe-accent))]">View</Link>
-                <button type="button" onClick={() => onEditProduct(product)} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] hover:bg-[rgb(var(--vibe-accent))]">Edit</button>
-                <button type="button" onClick={() => onDuplicateProduct(product)} className="inline-flex h-8 items-center justify-center rounded-md border border-[rgb(var(--vibe-border))] text-[11px] hover:bg-[rgb(var(--vibe-accent))]">Copy</button>
-                <button type="button" onClick={() => onToggleActive(product)} className={`inline-flex h-8 items-center justify-center rounded-md border px-2 text-[11px] ${(product.is_active ?? true) ? "border-[rgb(var(--vibe-border))] text-[rgb(var(--vibe-muted))]" : "border-amber-200 bg-amber-50 text-amber-700"}`}>
+              <div className="mt-3 grid grid-cols-2 gap-1.5">
+                <button type="button" onClick={() => onEditProduct(product)} className="h-9 rounded-md border border-[rgb(var(--vibe-border))] text-[12px]">Edit</button>
+                <button type="button" onClick={() => onToggleActive(product)} className="h-9 rounded-md border border-[rgb(var(--vibe-border))] text-[12px]">
                   {(product.is_active ?? true) ? "Archive" : "Activate"}
-                </button>
-                <button type="button" onClick={() => onDeleteProduct(product)} className="grid h-8 place-items-center rounded-md border border-red-100 text-red-600 hover:bg-red-50" aria-label={`Delete ${product.name}`}>
-                  <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
             </li>
           ))}
         </ul>
+      )}
+
+      <p className="text-right text-[11px] text-[rgb(var(--vibe-muted))]">
+        Showing {filtered.length} of {products.length} products
+      </p>
+    </div>
+  );
+}
+
+function StockBadge({ stock }: { stock: number }) {
+  if (stock <= 0) return <span className="rounded bg-red-50 px-1.5 py-0.5 text-[10px] font-medium text-red-700">Out of stock</span>;
+  if (stock <= 5) return <span className="rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">{stock} left</span>;
+  return <span className="text-[11px] text-[rgb(var(--vibe-muted))]">{stock} in stock</span>;
+}
+
+function ProductRowClean({
+  product,
+  onStockChange,
+  onEditProduct,
+  onDeleteProduct,
+  onToggleActive,
+  onDuplicateProduct,
+}: {
+  product: Product;
+  onStockChange: (product: Product, delta: number) => void;
+  onEditProduct: (product: Product) => void;
+  onDeleteProduct: (product: Product) => void;
+  onToggleActive: (product: Product) => void;
+  onDuplicateProduct: (product: Product) => void;
+}) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const stock = product.stock_quantity ?? 0;
+  const isActive = product.is_active ?? true;
+  const price = product.sale_price_inr ?? product.price_inr ?? product.price ?? 0;
+  const comparePrice = product.sale_price_inr ? product.price_inr ?? product.price : null;
+  return (
+    <tr className="border-t border-[rgb(var(--vibe-border))] transition-colors hover:bg-[rgb(var(--vibe-surface))]/60">
+      <td className="px-5 py-3">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-10 shrink-0 overflow-hidden rounded border border-[rgb(var(--vibe-border))] bg-[rgb(var(--vibe-surface))]">
+            {product.cover_image_url ? (
+              <img src={product.cover_image_url} alt={product.name} className="h-full w-full object-cover" />
+            ) : (
+              <div className="grid h-full place-items-center"><Package className="h-3.5 w-3.5 text-[rgb(var(--vibe-muted))]" /></div>
+            )}
+          </div>
+          <div className="min-w-0">
+            <button type="button" onClick={() => onEditProduct(product)} className="block truncate text-left text-[13px] font-medium hover:underline">
+              {product.name}
+            </button>
+            <p className="truncate text-[11px] text-[rgb(var(--vibe-muted))]">{product.sku ?? product.slug ?? "—"} · {product.category ?? "Books"}</p>
+          </div>
+        </div>
+      </td>
+      <td className="px-5 py-3">
+        <span className={cn(
+          "inline-flex items-center gap-1.5 text-[12px]",
+          isActive ? "text-emerald-700" : "text-[rgb(var(--vibe-muted))]"
+        )}>
+          <span className={cn("h-1.5 w-1.5 rounded-full", isActive ? "bg-emerald-500" : "bg-zinc-400")} />
+          {isActive ? "Active" : "Archived"}
+        </span>
+      </td>
+      <td className="px-5 py-3 text-right">
+        <div className="flex items-center justify-end gap-1.5">
+          <button type="button" onClick={() => onStockChange(product, -1)} className="grid h-7 w-7 place-items-center rounded border border-[rgb(var(--vibe-border))] text-[13px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" aria-label="Decrease stock">−</button>
+          <div className="w-20 text-center">
+            <p className={cn(
+              "font-mono text-[13px] tabular-nums",
+              stock === 0 ? "text-red-600 font-medium" : stock <= 5 ? "text-amber-600 font-medium" : "text-[rgb(var(--vibe-foreground))]"
+            )}>{stock}</p>
+            {stock <= 5 && <p className="text-[10px] text-[rgb(var(--vibe-muted))]">{stock === 0 ? "Out" : "Low"}</p>}
+          </div>
+          <button type="button" onClick={() => onStockChange(product, 1)} className="grid h-7 w-7 place-items-center rounded border border-[rgb(var(--vibe-border))] text-[13px] text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]" aria-label="Increase stock">+</button>
+        </div>
+      </td>
+      <td className="px-5 py-3 text-right">
+        <p className="font-mono text-[13px] font-semibold tabular-nums">{inr(price)}</p>
+        {comparePrice && comparePrice !== price && (
+          <p className="font-mono text-[11px] text-[rgb(var(--vibe-muted))] line-through tabular-nums">{inr(comparePrice)}</p>
         )}
-      </div>
-    </>
+      </td>
+      <td className="px-2 py-3 text-right">
+        <div className="relative inline-block">
+          <button
+            type="button"
+            onClick={() => setMenuOpen((v) => !v)}
+            onBlur={() => setTimeout(() => setMenuOpen(false), 150)}
+            className="grid h-8 w-8 place-items-center rounded-md text-[rgb(var(--vibe-muted))] hover:bg-[rgb(var(--vibe-accent))]"
+            aria-label="Product actions"
+          >
+            <MoreHorizontal className="h-4 w-4" />
+          </button>
+          {menuOpen && (
+            <div className="absolute right-0 top-full z-20 mt-1 w-44 overflow-hidden rounded-md border border-[rgb(var(--vibe-border))] bg-white shadow-lg">
+              <Link to={`/product/${product.slug ?? product.id}`} className="flex items-center gap-2 px-3 py-2 text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <ExternalLink className="h-3.5 w-3.5" /> View on store
+              </Link>
+              <button type="button" onClick={() => { setMenuOpen(false); onEditProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <Pencil className="h-3.5 w-3.5" /> Edit
+              </button>
+              <button type="button" onClick={() => { setMenuOpen(false); onDuplicateProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <CopyIcon className="h-3.5 w-3.5" /> Duplicate
+              </button>
+              <button type="button" onClick={() => { setMenuOpen(false); onToggleActive(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] hover:bg-[rgb(var(--vibe-accent))]">
+                <Archive className="h-3.5 w-3.5" /> {isActive ? "Archive" : "Activate"}
+              </button>
+              <div className="border-t border-[rgb(var(--vibe-border))]" />
+              <button type="button" onClick={() => { setMenuOpen(false); onDeleteProduct(product); }} className="flex w-full items-center gap-2 px-3 py-2 text-left text-[12px] text-red-600 hover:bg-red-50">
+                <Trash2 className="h-3.5 w-3.5" /> Delete
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
+    </tr>
   );
 }
 
