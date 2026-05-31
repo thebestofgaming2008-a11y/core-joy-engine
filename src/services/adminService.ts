@@ -1,6 +1,11 @@
 import { api } from "../../convex/_generated/api";
 import { convex } from "@/integrations/convex/client";
 import type { Product } from "./productService";
+import { listActiveProducts } from "./productService";
+
+const safeArray = async <T,>(p: Promise<unknown>): Promise<T[]> => {
+  try { const v = await p; return Array.isArray(v) ? (v as T[]) : []; } catch { return []; }
+};
 
 export const PRODUCT_BUCKET = "product-images";
 
@@ -47,7 +52,11 @@ export interface ProductInput {
 }
 
 export async function listAllProducts(): Promise<Product[]> {
-  return (await convex.query(api.products.listAllProducts, {})) as Product[];
+  try {
+    const v = await convex.query(api.products.listAllProducts, {});
+    if (Array.isArray(v) && v.length) return v as Product[];
+  } catch {}
+  return await listActiveProducts();
 }
 
 function slugify(s: string): string {
@@ -130,7 +139,7 @@ export interface AdminNotification {
 }
 
 export async function listDiscounts(): Promise<AdminDiscount[]> {
-  return (await convex.query(api.admin.listDiscounts, {})) as AdminDiscount[];
+  return await safeArray<AdminDiscount>(convex.query(api.admin.listDiscounts, {}));
 }
 
 export async function createDiscount(input: Omit<AdminDiscount, "id" | "active" | "used_count" | "created_at" | "updated_at">): Promise<AdminDiscount | null> {
@@ -146,12 +155,7 @@ export async function deleteDiscount(id: string): Promise<boolean> {
 }
 
 export async function listShippingRates(): Promise<ShippingRate[]> {
-  let rows = (await convex.query(api.admin.listShippingRates, {})) as ShippingRate[];
-  if (!rows.length) {
-    await convex.mutation(api.admin.seedShippingDefaults, {});
-    rows = (await convex.query(api.admin.listShippingRates, {})) as ShippingRate[];
-  }
-  return rows;
+  return await safeArray<ShippingRate>(convex.query(api.admin.listShippingRates, {}));
 }
 
 export async function updateShippingRate(id: string, patch: Partial<ShippingRate>): Promise<ShippingRate | null> {
@@ -159,7 +163,10 @@ export async function updateShippingRate(id: string, patch: Partial<ShippingRate
 }
 
 export async function getStoreSettings(): Promise<Record<string, unknown>> {
-  return (await convex.query(api.admin.getStoreSettings, {})) as Record<string, unknown>;
+  try {
+    const v = await convex.query(api.admin.getStoreSettings, {});
+    return (v && typeof v === "object") ? (v as Record<string, unknown>) : {};
+  } catch { return {}; }
 }
 
 export async function saveStoreSettings(settings: Record<string, unknown>): Promise<boolean> {
@@ -167,7 +174,7 @@ export async function saveStoreSettings(settings: Record<string, unknown>): Prom
 }
 
 export async function listAdminNotifications(): Promise<AdminNotification[]> {
-  return (await convex.query(api.admin.notifications, {})) as AdminNotification[];
+  return await safeArray<AdminNotification>(convex.query(api.admin.notifications, {}));
 }
 
 export interface AdminOrder {
@@ -206,7 +213,7 @@ export interface AdminOrder {
 }
 
 export async function listAllOrders(limit = 100): Promise<AdminOrder[]> {
-  return (await convex.query(api.orders.listAll, { limit })) as AdminOrder[];
+  return await safeArray<AdminOrder>(convex.query(api.orders.listAll, { limit }));
 }
 
 export async function updateOrderStatus(id: string, status: string): Promise<boolean> {
@@ -237,7 +244,7 @@ export interface AdminCustomer {
 }
 
 export async function listAllCustomers(limit = 200): Promise<AdminCustomer[]> {
-  return (await convex.query(api.users.listCustomers, { limit })) as AdminCustomer[];
+  return await safeArray<AdminCustomer>(convex.query(api.users.listCustomers, { limit }));
 }
 
 export interface AdminReview {
@@ -256,7 +263,7 @@ export interface AdminReview {
 }
 
 export async function listAllReviews(limit = 200): Promise<AdminReview[]> {
-  return (await convex.query(api.reviews.listAll, { limit })) as AdminReview[];
+  return await safeArray<AdminReview>(convex.query(api.reviews.listAll, { limit }));
 }
 
 export async function updateReviewStatus(
