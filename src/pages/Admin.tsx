@@ -350,17 +350,19 @@ export default function Admin() {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    Promise.all([listAllProducts(), listAllOrders(200), listAllCustomers(200), listAllReviews(200), listDiscounts(), listShippingRates(), getStoreSettings(), listAdminNotifications()]).then(
+    Promise.all([listAllProducts(), listAllOrders(200), listAllCustomers(200), listAllReviews(200), listDiscounts(), listShippingRates(), getStoreSettings(), listAdminNotifications()])
+      .catch(() => [[], [], [], [], [], [], {}, []] as const)
+      .then(
       ([nextProducts, nextOrders, nextCustomers, nextReviews, nextDiscounts, nextShippingRates, nextStoreSettings, nextNotifications]) => {
         if (cancelled) return;
-        setProducts(nextProducts);
-        setOrders(nextOrders);
-        setCustomers(nextCustomers);
-        setReviews(nextReviews);
-        setDiscounts(nextDiscounts);
-        setShippingRates(nextShippingRates);
-        setStoreSettings(nextStoreSettings);
-        setAdminNotifications(nextNotifications);
+        setProducts(nextProducts as Product[]);
+        setOrders(nextOrders as AdminOrder[]);
+        setCustomers(nextCustomers as AdminCustomer[]);
+        setReviews(nextReviews as AdminReview[]);
+        setDiscounts(nextDiscounts as AdminDiscount[]);
+        setShippingRates(nextShippingRates as ShippingRate[]);
+        setStoreSettings(nextStoreSettings as Record<string, unknown>);
+        setAdminNotifications(nextNotifications as AdminNotification[]);
         setLoading(false);
       },
     );
