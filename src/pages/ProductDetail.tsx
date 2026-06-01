@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ChevronRight, Heart, Minus, Plus, ShieldCheck, Truck } from "lucide-react";
+import { ChevronRight, Heart, Minus, Plus, ShieldCheck, Star, Truck, RotateCcw } from "lucide-react";
 import { SiteLayout } from "@/components/layout/SiteLayout";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { CATEGORIES, productCompareAt, productImage, productPrice, type CategoryKey } from "@/data/products";
@@ -52,9 +52,13 @@ const ProductDetail = () => {
       if (cancelled) return;
 
       setProduct(nextProduct);
-      setReviews(nextProduct ? await listPublishedReviews(nextProduct.id).catch(() => []) : []);
-      setCanReview(nextProduct && user ? await canReviewProduct(nextProduct.id).catch(() => false) : false);
-      setVersions(nextProduct?.linked_product_ids?.length ? await listByIds(nextProduct.linked_product_ids).catch(() => []) : []);
+      const safeReviews = nextProduct ? await listPublishedReviews(nextProduct.id).catch(() => []) : [];
+      setReviews(Array.isArray(safeReviews) ? safeReviews : []);
+      setCanReview(nextProduct ? await canReviewProduct(nextProduct.id).catch(() => false) : false);
+      const safeVersions = nextProduct?.linked_product_ids?.length
+        ? await listByIds(nextProduct.linked_product_ids).catch(() => [])
+        : [];
+      setVersions(Array.isArray(safeVersions) ? safeVersions : []);
 
       if (nextProduct?.category) {
         const categoryProducts = await listByCategory(nextProduct.category);
@@ -122,6 +126,11 @@ const ProductDetail = () => {
   const sizeOptions = product.size_options ?? [];
   const activeColor = selectedColor || colorOptions[0] || "";
   const activeSize = selectedSize || sizeOptions[0] || "";
+  const reviewCount = reviews.length || product.reviews_count || 0;
+  const aggregateRating =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+      : product.rating ?? 0;
 
   const onAdd = () => {
     if (!inStock) return;
@@ -176,7 +185,16 @@ const ProductDetail = () => {
               {(product.author || product.publisher) && (
                 <p className="mt-2 font-serif text-lg text-black/60 sm:text-2xl">By {product.author || product.publisher}</p>
               )}
-              <p className={cn("mt-4 text-sm font-semibold", inStock ? "text-emerald-700" : "text-red-700")}>{inStock ? "In stock" : "Out of stock"}</p>
+              {aggregateRating > 0 && (
+                <a href="#reviews" className="mt-3 inline-flex items-center gap-2 text-sm text-black/70 hover:text-black">
+                  <Stars value={aggregateRating} />
+                  <span className="font-semibold text-[#06133a]">{aggregateRating.toFixed(1)}</span>
+                  <span className="text-black/55">({reviewCount} {reviewCount === 1 ? "review" : "reviews"})</span>
+                </a>
+              )}
+              <p className={cn("mt-3 text-sm font-semibold", inStock ? "text-emerald-700" : "text-red-700")}>
+                {inStock ? (stock > 0 && stock <= 5 ? `Only ${stock} left in stock` : "In stock — ready to ship") : "Out of stock"}
+              </p>
 
               <div className="mt-5">
                 <div>
@@ -238,9 +256,11 @@ const ProductDetail = () => {
                   {wished ? "Saved to wishlist" : "Add to wishlist"}
                 </button>
               </div>
-              <div className="mt-5 grid gap-3 border-y border-[#06133a]/10 py-4 text-sm text-black/65 sm:grid-cols-2">
-                <p className="flex items-center gap-2"><Truck className="h-4 w-4 text-brand" /> Shipping included across India</p>
-                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> Secure checkout with Razorpay</p>
+              <div className="mt-5 grid gap-3 border-y border-[#06133a]/10 py-4 text-sm text-black/70 sm:grid-cols-2">
+                <p className="flex items-center gap-2"><Truck className="h-4 w-4 text-brand" /> Free shipping across India on orders over ₹999</p>
+                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> 100% secure checkout</p>
+                <p className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-brand" /> Easy 7-day returns</p>
+                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> Authentic, sourced with care</p>
               </div>
 
               <section className="mt-8 max-w-[49rem]">
@@ -263,7 +283,17 @@ const ProductDetail = () => {
           </div>
           </section>
 
-          <ReviewsSection productId={product.id} userReady={Boolean(user)} canReview={canReview} reviews={reviews} onSubmitted={async () => setReviews(await listPublishedReviews(product.id).catch(() => reviews))} />
+          <ReviewsSection
+            productId={product.id}
+            userReady={Boolean(user)}
+            canReview={canReview}
+            reviews={reviews}
+            aggregateRating={aggregateRating}
+            onSubmitted={async () => {
+              const refreshed = await listPublishedReviews(product.id).catch(() => reviews);
+              setReviews(Array.isArray(refreshed) ? refreshed : reviews);
+            }}
+          />
 
           {related.length > 0 && (
             <section className="mt-14 border-t border-[#06133a] pt-8 sm:mt-20 sm:pt-10">
@@ -331,22 +361,41 @@ function isVideoUrl(url: string) {
   return /\.(mp4|webm|mov|m4v)(\?|#|$)/i.test(url);
 }
 
-function ReviewsSection({ productId, userReady, canReview, reviews, onSubmitted }: { productId: string; userReady: boolean; canReview: boolean; reviews: ProductReview[]; onSubmitted: () => Promise<void> }) {
+function Stars({ value, size = "sm" }: { value: number; size?: "sm" | "md" }) {
+  const dim = size === "md" ? "h-5 w-5" : "h-4 w-4";
+  return (
+    <span className="inline-flex items-center" aria-label={`${value.toFixed(1)} out of 5 stars`}>
+      {[0, 1, 2, 3, 4].map((i) => {
+        const filled = value >= i + 1;
+        const half = !filled && value > i && value < i + 1;
+        return (
+          <Star
+            key={i}
+            className={cn(dim, filled || half ? "fill-amber-400 text-amber-400" : "fill-transparent text-black/25")}
+          />
+        );
+      })}
+    </span>
+  );
+}
+
+function ReviewsSection({ productId, userReady: _userReady, canReview, reviews, aggregateRating, onSubmitted }: { productId: string; userReady: boolean; canReview: boolean; reviews: ProductReview[]; aggregateRating: number; onSubmitted: () => Promise<void> }) {
   const [rating, setRating] = useState(5);
+  const [customerName, setCustomerName] = useState("");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!userReady) return toast({ title: "Please sign in to review this product", variant: "destructive" });
-    if (!canReview) return toast({ title: "Only verified customers can review this product", variant: "destructive" });
+    if (!canReview) return toast({ title: "Reviews are temporarily closed", variant: "destructive" });
     setSubmitting(true);
     try {
-      await submitReview({ productId, rating, title: title || null, body: body || null });
-      toast({ title: "Review submitted", description: "It will appear after approval." });
+      await submitReview({ productId, rating, title: title || null, body: body || null, customerName: customerName.trim() || null });
+      toast({ title: "Thanks for your review!", description: "It's now live on this page." });
       setTitle("");
       setBody("");
+      setCustomerName("");
       await onSubmitted();
     } catch {
       toast({ title: "Could not submit review", variant: "destructive" });
@@ -356,48 +405,57 @@ function ReviewsSection({ productId, userReady, canReview, reviews, onSubmitted 
   };
 
   return (
-    <section className="pdp-fade-in mt-14 max-w-[49rem] lg:ml-auto">
-      <div className="flex items-center gap-6 border-b border-[#06133a] pb-6">
-        <h2 className="font-serif text-3xl text-black sm:text-4xl">Customer Reviews</h2>
+    <section id="reviews" className="pdp-fade-in mt-14 max-w-[49rem] lg:ml-auto scroll-mt-24">
+      <div className="flex flex-wrap items-end justify-between gap-4 border-b border-[#06133a] pb-6">
+        <div>
+          <h2 className="font-serif text-3xl text-black sm:text-4xl">Customer Reviews</h2>
+          {reviews.length > 0 ? (
+            <div className="mt-2 flex items-center gap-2 text-sm text-black/70">
+              <Stars value={aggregateRating} size="md" />
+              <span className="font-semibold text-[#06133a]">{aggregateRating.toFixed(1)}</span>
+              <span>· {reviews.length} {reviews.length === 1 ? "review" : "reviews"}</span>
+            </div>
+          ) : (
+            <p className="mt-2 text-sm text-black/55">Be the first to share your experience.</p>
+          )}
+        </div>
       </div>
       <form onSubmit={submit} className="mt-6 grid gap-3">
         <div className="rounded-md border border-[#06133a]/30 bg-white/45 p-3">
           <div className="flex items-center justify-between gap-3">
-            <label htmlFor="review-rating" className="font-serif text-xl text-[#06133a]">Your rating</label>
-            <input
-              id="review-rating"
-              type="number"
-              min={1}
-              max={5}
-              step={0.1}
-              value={rating}
-              onChange={(event) => setRating(Math.max(1, Math.min(5, Number(event.target.value) || 1)))}
-              className="h-10 w-24 border border-[#06133a]/35 bg-white/70 px-3 text-right font-serif text-xl outline-none"
-            />
+            <span className="font-serif text-xl text-[#06133a]">Your rating</span>
+            <div className="flex items-center gap-1">
+              {[1, 2, 3, 4, 5].map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => setRating(n)}
+                  aria-label={`${n} star${n > 1 ? "s" : ""}`}
+                  className="p-1"
+                >
+                  <Star className={cn("h-7 w-7", n <= rating ? "fill-amber-400 text-amber-400" : "fill-transparent text-black/30")} />
+                </button>
+              ))}
+            </div>
           </div>
-          <input
-            type="range"
-            min={1}
-            max={5}
-            step={0.1}
-            value={rating}
-            onChange={(event) => setRating(Number(event.target.value))}
-            className="mt-3 w-full accent-[#06133a]"
-            aria-label="Review rating"
-          />
         </div>
+        <input value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Your name (optional)" className="h-11 border border-[#06133a]/40 bg-white/60 px-3 font-serif text-xl outline-none" />
         <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Review title" className="h-11 border border-[#06133a]/40 bg-white/60 px-3 font-serif text-xl outline-none" />
         <textarea value={body} onChange={(event) => setBody(event.target.value)} placeholder="Write your review" rows={4} className="resize-none border border-[#06133a]/40 bg-white/60 px-3 py-2 font-serif text-xl outline-none" />
-        {!canReview && (
-          <p className="rounded-md border border-[#06133a]/20 bg-white/45 px-3 py-2 font-serif text-lg text-[#06133a]/75">
-            Reviews are text-only at launch and open after a verified purchase on this account email.
-          </p>
-        )}
-        <button disabled={submitting || !canReview} className="pdp-press h-12 rounded-md bg-brand font-bold text-brand-foreground shadow-2xl disabled:opacity-50">{submitting ? "Submitting..." : "Add review"}</button>
+        <button disabled={submitting || !canReview} className="pdp-press h-12 rounded-md bg-brand font-bold text-brand-foreground shadow-2xl disabled:opacity-50">{submitting ? "Submitting..." : "Submit review"}</button>
       </form>
       <div className="mt-8 space-y-5">
         {reviews.map((review) => (
           <article key={review.id} className="border-b border-[#06133a]/20 pb-4 font-serif">
+            <div className="flex items-center gap-3">
+              <Stars value={review.rating} />
+              <span className="text-sm font-semibold text-[#06133a]">{review.customer_name || "Verified Customer"}</span>
+              {review.created_at && (
+                <span className="text-xs text-black/45">
+                  {new Date(review.created_at).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" })}
+                </span>
+              )}
+            </div>
             {review.title && <h3 className="mt-2 text-2xl text-black">{review.title}</h3>}
             {review.body && <p className="mt-1 text-xl leading-tight text-black/75">{review.body}</p>}
           </article>

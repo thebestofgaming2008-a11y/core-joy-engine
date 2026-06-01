@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Heart, ShoppingBag } from "lucide-react";
+import { Heart, ShoppingBag, Star } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useShop } from "@/store/shop";
 import type { Product } from "@/services/productService";
@@ -25,6 +25,8 @@ export function ProductCard({ product, className, priority = false }: Props) {
   const showImage = !!image && !imgError;
   const link = `/product/${product.slug ?? product.id}`;
   const hasOptions = Boolean((product.color_options?.length ?? 0) || (product.size_options?.length ?? 0));
+  const rating = Number(product.rating ?? 0);
+  const reviewsCount = Number(product.reviews_count ?? 0);
 
   const onAdd = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -101,6 +103,24 @@ export function ProductCard({ product, className, priority = false }: Props) {
         </Link>
         {product.author && (
           <p className="text-xs md:text-sm text-foreground/60 line-clamp-1">{product.author}</p>
+        )}
+        {rating > 0 && (
+          <div className="mt-1 flex items-center gap-1.5" aria-label={`${rating.toFixed(1)} of 5 stars`}>
+            <span className="inline-flex">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <Star
+                  key={i}
+                  className={cn(
+                    "h-3.5 w-3.5",
+                    rating >= i + 1 ? "fill-amber-400 text-amber-400" : "fill-transparent text-foreground/25",
+                  )}
+                />
+              ))}
+            </span>
+            {reviewsCount > 0 && (
+              <span className="text-[11px] text-foreground/55">({reviewsCount})</span>
+            )}
+          </div>
         )}
         <div className="mt-1 flex items-baseline gap-2">
           <p className="text-sm md:text-base text-hero-foreground font-semibold">
