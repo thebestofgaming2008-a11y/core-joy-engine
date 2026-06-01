@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ChevronRight, Heart, Minus, Plus, ShieldCheck, Truck } from "lucide-react";
+import { ChevronRight, Heart, Minus, Plus, ShieldCheck, Star, Truck, RotateCcw } from "lucide-react";
 import { SiteLayout } from "@/components/layout/SiteLayout";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { CATEGORIES, productCompareAt, productImage, productPrice, type CategoryKey } from "@/data/products";
@@ -52,9 +52,13 @@ const ProductDetail = () => {
       if (cancelled) return;
 
       setProduct(nextProduct);
-      setReviews(nextProduct ? await listPublishedReviews(nextProduct.id).catch(() => []) : []);
-      setCanReview(nextProduct && user ? await canReviewProduct(nextProduct.id).catch(() => false) : false);
-      setVersions(nextProduct?.linked_product_ids?.length ? await listByIds(nextProduct.linked_product_ids).catch(() => []) : []);
+      const safeReviews = nextProduct ? await listPublishedReviews(nextProduct.id).catch(() => []) : [];
+      setReviews(Array.isArray(safeReviews) ? safeReviews : []);
+      setCanReview(nextProduct ? await canReviewProduct(nextProduct.id).catch(() => false) : false);
+      const safeVersions = nextProduct?.linked_product_ids?.length
+        ? await listByIds(nextProduct.linked_product_ids).catch(() => [])
+        : [];
+      setVersions(Array.isArray(safeVersions) ? safeVersions : []);
 
       if (nextProduct?.category) {
         const categoryProducts = await listByCategory(nextProduct.category);
@@ -122,6 +126,11 @@ const ProductDetail = () => {
   const sizeOptions = product.size_options ?? [];
   const activeColor = selectedColor || colorOptions[0] || "";
   const activeSize = selectedSize || sizeOptions[0] || "";
+  const reviewCount = reviews.length || product.reviews_count || 0;
+  const aggregateRating =
+    reviews.length > 0
+      ? reviews.reduce((sum, r) => sum + (r.rating || 0), 0) / reviews.length
+      : product.rating ?? 0;
 
   const onAdd = () => {
     if (!inStock) return;
@@ -176,7 +185,16 @@ const ProductDetail = () => {
               {(product.author || product.publisher) && (
                 <p className="mt-2 font-serif text-lg text-black/60 sm:text-2xl">By {product.author || product.publisher}</p>
               )}
-              <p className={cn("mt-4 text-sm font-semibold", inStock ? "text-emerald-700" : "text-red-700")}>{inStock ? "In stock" : "Out of stock"}</p>
+              {aggregateRating > 0 && (
+                <a href="#reviews" className="mt-3 inline-flex items-center gap-2 text-sm text-black/70 hover:text-black">
+                  <Stars value={aggregateRating} />
+                  <span className="font-semibold text-[#06133a]">{aggregateRating.toFixed(1)}</span>
+                  <span className="text-black/55">({reviewCount} {reviewCount === 1 ? "review" : "reviews"})</span>
+                </a>
+              )}
+              <p className={cn("mt-3 text-sm font-semibold", inStock ? "text-emerald-700" : "text-red-700")}>
+                {inStock ? (stock > 0 && stock <= 5 ? `Only ${stock} left in stock` : "In stock — ready to ship") : "Out of stock"}
+              </p>
 
               <div className="mt-5">
                 <div>
@@ -238,9 +256,11 @@ const ProductDetail = () => {
                   {wished ? "Saved to wishlist" : "Add to wishlist"}
                 </button>
               </div>
-              <div className="mt-5 grid gap-3 border-y border-[#06133a]/10 py-4 text-sm text-black/65 sm:grid-cols-2">
-                <p className="flex items-center gap-2"><Truck className="h-4 w-4 text-brand" /> Shipping included across India</p>
-                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> Secure checkout with Razorpay</p>
+              <div className="mt-5 grid gap-3 border-y border-[#06133a]/10 py-4 text-sm text-black/70 sm:grid-cols-2">
+                <p className="flex items-center gap-2"><Truck className="h-4 w-4 text-brand" /> Free shipping across India on orders over ₹999</p>
+                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> 100% secure checkout</p>
+                <p className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-brand" /> Easy 7-day returns</p>
+                <p className="flex items-center gap-2"><ShieldCheck className="h-4 w-4 text-brand" /> Authentic, sourced with care</p>
               </div>
 
               <section className="mt-8 max-w-[49rem]">
@@ -263,7 +283,17 @@ const ProductDetail = () => {
           </div>
           </section>
 
-          <ReviewsSection productId={product.id} userReady={Boolean(user)} canReview={canReview} reviews={reviews} onSubmitted={async () => setReviews(await listPublishedReviews(product.id).catch(() => reviews))} />
+          <ReviewsSection
+            productId={product.id}
+            userReady={Boolean(user)}
+            canReview={canReview}
+            reviews={reviews}
+            aggregateRating={aggregateRating}
+            onSubmitted={async () => {
+              const refreshed = await listPublishedReviews(product.id).catch(() => reviews);
+              setReviews(Array.isArray(refreshed) ? refreshed : reviews);
+            }}
+          />
 
           {related.length > 0 && (
             <section className="mt-14 border-t border-[#06133a] pt-8 sm:mt-20 sm:pt-10">
