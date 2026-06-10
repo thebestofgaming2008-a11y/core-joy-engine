@@ -21,7 +21,7 @@ import { SiteLayout } from "@/components/layout/SiteLayout";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { CATEGORIES, type CategoryKey } from "@/data/products";
 import { listActiveProducts, type Product } from "@/services/productService";
-import { useReveal, useRevealGroup } from "@/hooks/use-reveal";
+import { useRevealGroup } from "@/hooks/use-reveal";
 
 const GUARANTEES = ["Authentic titles", "India-wide delivery", "Secure checkout"];
 
