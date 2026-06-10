@@ -432,3 +432,88 @@ function CollectionSection({
 }
 
 export default Index;
+
+function SubjectsSection() {
+  const groupRef = useRevealGroup<HTMLDivElement>();
+  return (
+    <div ref={groupRef} className="mx-auto max-w-[1440px] px-4 md:px-8 py-16 md:py-24">
+      <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-8 md:mb-12">
+        <div className="max-w-xl reveal">
+          <p className="text-xs md:text-sm font-semibold uppercase tracking-[0.18em] text-brand">
+            Browse the library
+          </p>
+          <h2 className="mt-2 text-foreground tracking-tight text-2xl md:text-3xl lg:text-4xl">
+            Choose your subject
+          </h2>
+          <p className="mt-3 text-foreground/60 text-sm md:text-base">
+            Tap a subject to jump straight to titles in that field.
+          </p>
+        </div>
+        <Link
+          to="/shop"
+          className="reveal reveal-delay-1 group hidden md:inline-flex items-center gap-1 text-foreground text-sm md:text-base hover:text-brand transition-colors self-start md:self-auto"
+        >
+          View all subjects
+          <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
+        </Link>
+      </div>
+
+      {/* Mobile: snap-scroll rail of large tappable cards. Desktop: 4-col grid. */}
+      <div className="md:hidden -mx-4 px-4">
+        <div className="snap-rail flex gap-3 overflow-x-auto no-scrollbar pb-2">
+          {SUBJECTS.map(({ name, desc, Icon }, i) => (
+            <Link
+              key={name}
+              to={`/shop?category=books&subject=${encodeURIComponent(name)}`}
+              className={`snap-item subject-card reveal reveal-delay-${Math.min(i % 4, 3)} group shrink-0 w-[68vw] max-w-[280px] p-5 flex flex-col gap-4 active:scale-[0.985]`}
+            >
+              <div className="flex items-start justify-between">
+                <span className="h-11 w-11 grid place-items-center rounded-xl bg-brand/10 text-brand">
+                  <Icon className="h-5 w-5" />
+                </span>
+                <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/40">
+                  Shop
+                </span>
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground text-lg tracking-tight">{name}</h3>
+                <p className="mt-1 text-sm text-foreground/60 leading-snug">{desc}</p>
+              </div>
+              <div className="mt-1 inline-flex items-center gap-1.5 text-sm font-semibold text-brand">
+                Browse
+                <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5 group-active:translate-x-0.5" />
+              </div>
+            </Link>
+          ))}
+        </div>
+        <div className="mt-5 flex justify-center">
+          <Link
+            to="/shop"
+            className="inline-flex items-center gap-1.5 text-sm font-semibold text-brand"
+          >
+            View all subjects <ArrowRight className="h-4 w-4" />
+          </Link>
+        </div>
+      </div>
+
+      <div className="hidden md:grid grid-cols-2 md:grid-cols-4 gap-4">
+        {SUBJECTS.map(({ name, desc, Icon }, i) => (
+          <Link
+            key={name}
+            to={`/shop?category=books&subject=${encodeURIComponent(name)}`}
+            className={`subject-card reveal reveal-delay-${Math.min(i % 4, 3)} group p-6 flex flex-col gap-4`}
+          >
+            <span className="h-11 w-11 grid place-items-center rounded-xl bg-brand/10 text-brand group-hover:bg-brand group-hover:text-brand-foreground transition-colors">
+              <Icon className="h-5 w-5" />
+            </span>
+            <div>
+              <h3 className="font-semibold text-foreground text-lg tracking-tight">{name}</h3>
+              <p className="mt-1 text-sm text-foreground/60">{desc}</p>
+            </div>
+            <ArrowRight className="absolute top-6 right-6 h-4 w-4 text-foreground/30 group-hover:text-brand group-hover:translate-x-0.5 transition-all" />
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
