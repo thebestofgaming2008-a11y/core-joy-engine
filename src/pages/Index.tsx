@@ -21,6 +21,7 @@ import { SiteLayout } from "@/components/layout/SiteLayout";
 import { ProductCard } from "@/components/shop/ProductCard";
 import { CATEGORIES, type CategoryKey } from "@/data/products";
 import { listActiveProducts, type Product } from "@/services/productService";
+import { useReveal, useRevealGroup } from "@/hooks/use-reveal";
 
 const GUARANTEES = ["Authentic titles", "India-wide delivery", "Secure checkout"];
 
@@ -109,14 +110,14 @@ const Index = () => {
           src={calligraphyLeft}
           alt=""
           aria-hidden
-          className="pointer-events-none select-none absolute opacity-90"
+          className="pointer-events-none select-none absolute opacity-90 calligraphy-float-l will-change-transform"
           style={{ top: "-10vw", left: "-11.04vw", width: "29.04vw", height: "auto" }}
         />
         <img
           src={calligraphyRight}
           alt=""
           aria-hidden
-          className="pointer-events-none select-none absolute opacity-90"
+          className="pointer-events-none select-none absolute opacity-90 calligraphy-float-r will-change-transform"
           style={{ top: "-10vw", right: "-11vw", width: "28.84vw", height: "auto" }}
         />
 
@@ -130,27 +131,30 @@ const Index = () => {
         />
 
         <div className="relative mx-auto max-w-[1440px] px-4 py-12 md:py-20 lg:py-24 text-center">
-          <h1 className="font-bold italic tracking-tight text-foreground text-[clamp(1.75rem,5vw,5.125rem)] leading-[0.95]">
+          <h1 className="hero-rise font-bold italic tracking-tight text-foreground text-[clamp(1.75rem,5vw,5.125rem)] leading-[0.95]">
             SEEK KNOWLEDGE
           </h1>
-          <p className="text-hero-foreground tracking-tight text-[clamp(2.5rem,8vw,7.625rem)] leading-[0.95] -mt-1 md:-mt-2">
+          <p className="hero-rise-1 text-hero-foreground tracking-tight text-[clamp(2.5rem,8vw,7.625rem)] leading-[0.95] -mt-1 md:-mt-2">
             AFFORDABLY.
           </p>
 
-          <p className="mt-4 md:mt-6 text-[hsl(0_0%_0%_/_0.65)] text-[clamp(0.875rem,1.6vw,2.375rem)] tracking-tight">
+          <p className="hero-rise-2 mt-4 md:mt-6 text-[hsl(0_0%_0%_/_0.65)] text-[clamp(0.875rem,1.6vw,2.375rem)] tracking-tight">
             Seeking knowledge made easy.
           </p>
 
-          <ul className="mt-3 md:mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[hsl(0_0%_0%_/_0.6)] text-xs sm:text-sm md:text-base">
+          <ul className="hero-rise-3 mt-3 md:mt-5 flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-[hsl(0_0%_0%_/_0.6)] text-xs sm:text-sm md:text-base">
             {GUARANTEES.map((g) => (
-              <li key={g}>{g}</li>
+              <li key={g} className="inline-flex items-center gap-1.5">
+                <span aria-hidden className="inline-block h-1.5 w-1.5 rounded-full bg-brand/60" />
+                {g}
+              </li>
             ))}
           </ul>
 
-          <div className="mt-7 md:mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
+          <div className="hero-rise-4 mt-7 md:mt-10 flex flex-col sm:flex-row items-center justify-center gap-3 md:gap-4">
             <Link
               to="/shop"
-              className="group inline-flex items-center justify-center gap-2 rounded-md bg-brand text-brand-foreground font-bold tracking-tight text-base md:text-lg px-10 md:px-14 py-3.5 md:py-4 shadow-2xl hover:opacity-95 transition-opacity"
+              className="cta-sheen group inline-flex items-center justify-center gap-2 rounded-md bg-brand text-brand-foreground font-bold tracking-tight text-base md:text-lg px-10 md:px-14 py-3.5 md:py-4 shadow-2xl hover:-translate-y-0.5 hover:shadow-[0_18px_40px_-14px_hsl(var(--brand)/0.55)] transition-all"
             >
               Browse products
               <ArrowRight className="h-4 w-4 md:h-5 md:w-5 transition-transform group-hover:translate-x-0.5" />
@@ -161,6 +165,14 @@ const Index = () => {
             >
               Check out categories
             </a>
+          </div>
+
+          <div
+            aria-hidden
+            className="hero-rise-4 mt-8 md:mt-12 flex flex-col items-center gap-1.5 text-[hsl(0_0%_0%_/_0.45)]"
+          >
+            <span className="text-[10px] uppercase tracking-[0.22em]">Scroll</span>
+            <span className="block h-7 w-[1px] bg-current/40 animate-pulse" />
           </div>
         </div>
       </section>
