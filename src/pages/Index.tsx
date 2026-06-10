@@ -300,48 +300,7 @@ const Index = () => {
       />
 
       <section id="subjects" className="bg-hero/40 border-t border-border scroll-mt-[140px]">
-        <div className="mx-auto max-w-[1440px] px-4 md:px-8 py-16 md:py-24">
-          <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4 mb-10 md:mb-14">
-            <div className="max-w-xl">
-              <p className="text-xs md:text-sm font-semibold uppercase tracking-[0.18em] text-brand">
-                Browse the library
-              </p>
-              <h2 className="mt-2 text-foreground tracking-tight text-2xl md:text-3xl lg:text-4xl">
-                Choose your subject
-              </h2>
-              <p className="mt-3 text-foreground/60 text-sm md:text-base">
-                Start where your heart is drawn - explore titles by field of study.
-              </p>
-            </div>
-            <Link
-              to="/shop"
-              className="group inline-flex items-center gap-1 text-foreground text-sm md:text-base hover:text-brand transition-colors self-start md:self-auto"
-            >
-              View all subjects
-              <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
-            </Link>
-          </div>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-px bg-border rounded-2xl overflow-hidden border border-border">
-            {SUBJECTS.map(({ name, desc, Icon }) => (
-              <Link
-                key={name}
-                to={`/shop?category=books&subject=${encodeURIComponent(name)}`}
-                className="group relative bg-background p-6 md:p-8 flex flex-col gap-4 hover:bg-hero/60 transition-colors"
-              >
-                <span className="h-10 w-10 grid place-items-center rounded-lg border border-border text-brand group-hover:bg-brand group-hover:text-brand-foreground group-hover:border-brand transition-colors">
-                  <Icon className="h-5 w-5" />
-                </span>
-                <div>
-                  <h3 className="font-semibold text-foreground text-base md:text-lg tracking-tight">
-                    {name}
-                  </h3>
-                  <p className="mt-1 text-xs md:text-sm text-foreground/55">{desc}</p>
-                </div>
-                <ArrowRight className="absolute top-6 right-6 h-4 w-4 text-foreground/30 group-hover:text-brand group-hover:translate-x-0.5 transition-all" />
-              </Link>
-            ))}
-          </div>
-        </div>
+        <SubjectsSection />
       </section>
 
       <section className="bg-background border-t border-border">
